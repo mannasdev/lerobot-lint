@@ -154,3 +154,74 @@ class TaskImbalanceCheck(DatasetCheck):
                     )
                 )
         return findings
+
+
+class LowDiversityCheck(DatasetCheck):
+    """E5. Workspace-coverage approximation (no forward kinematics in v1): if
+    episodes' trajectory centroids barely spread relative to the dataset-wide
+    joint range, the demos are near-identical and a policy won't generalize
+    to moved objects.
+
+    Subsample cap (resolves a cross-model outside-voice finding): vectorizing
+    the pairwise-centroid-distance computation makes it fast, but doesn't
+    change its O(n^2) complexity -- capped to a random subsample above
+    SUBSAMPLE_CAP episodes so large Hub datasets stay fast regardless of
+    scale, rather than depending on the field-study corpus happening to
+    include a large dataset to reveal the problem."""
+
+    id = "LOW_DIVERSITY"
+    severity = "warning"
+    scope = "dataset"
+
+    RELATIVE_DISTANCE_THRESHOLD = 0.05
+    SUBSAMPLE_CAP = 500
+    SUBSAMPLE_SEED = 0
+
+    def run_dataset(self, summaries: list[EpisodeSummary]) -> list[Finding]:
+        if len(summaries) < 2:
+            return []
+
+        if len(summaries) > self.SUBSAMPLE_CAP:
+            rng = np.random.default_rng(self.SUBSAMPLE_SEED)
+            indices = rng.choice(len(summaries), size=self.SUBSAMPLE_CAP, replace=False)
+            sampled = [summaries[i] for i in indices]
+        else:
+            sampled = summaries
+
+        centroids = np.stack([s.joint_means for s in sampled])
+        global_min = np.min(np.stack([s.joint_mins for s in summaries]), axis=0)
+        global_max = np.max(np.stack([s.joint_maxs for s in summaries]), axis=0)
+        range_norm = float(np.linalg.norm(global_max - global_min))
+        if range_norm == 0.0:
+            return []
+
+        # vectorized pairwise Euclidean distance -- fast per-pair, still O(n^2)
+        # pairs overall, which is why the subsample cap above exists.
+        diffs = centroids[:, None, :] - centroids[None, :, :]
+        distances = np.sqrt(np.sum(diffs**2, axis=-1))
+        upper_triangle = distances[np.triu_indices_from(distances, k=1)]
+        mean_pairwise_distance = float(np.mean(upper_triangle))
+
+        if mean_pairwise_distance < self.RELATIVE_DISTANCE_THRESHOLD * range_norm:
+            return [
+                Finding(
+                    check=self.id,
+                    severity=self.severity,
+                    episode=None,
+                    joint=None,
+                    frames=[],
+                    message=(
+                        f"Episodes traverse near-identical trajectories (mean pairwise "
+                        f"centroid distance {mean_pairwise_distance:.3f}, "
+                        f"{mean_pairwise_distance / range_norm:.1%} of the dataset's "
+                        f"joint-space range) -- demos are near-identical, policy will "
+                        f"not generalize to moved objects"
+                    ),
+                    data={
+                        "mean_pairwise_distance": mean_pairwise_distance,
+                        "range_norm": range_norm,
+                        "sampled_episode_count": len(sampled),
+                    },
+                )
+            ]
+        return []

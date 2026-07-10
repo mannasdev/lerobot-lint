@@ -2,6 +2,7 @@ import numpy as np
 
 from lerobot_lint.checks.hygiene import (
     DurationOutlierCheck,
+    LowDiversityCheck,
     MissingTaskCheck,
     ShortEpisodeCheck,
     TaskImbalanceCheck,
@@ -9,15 +10,23 @@ from lerobot_lint.checks.hygiene import (
 from lerobot_lint.types import EpisodeSummary
 
 
-def _summary(episode_index=0, frame_count=100, duration=3.0, task="pick up the block"):
+def _summary(
+    episode_index=0,
+    frame_count=100,
+    duration=3.0,
+    task="pick up the block",
+    joint_means=None,
+    joint_mins=None,
+    joint_maxs=None,
+):
     return EpisodeSummary(
         episode_index=episode_index,
         frame_count=frame_count,
         duration=duration,
         task=task,
-        joint_means=np.zeros(3),
-        joint_mins=np.zeros(3),
-        joint_maxs=np.ones(3),
+        joint_means=joint_means if joint_means is not None else np.zeros(3),
+        joint_mins=joint_mins if joint_mins is not None else np.zeros(3),
+        joint_maxs=joint_maxs if joint_maxs is not None else np.ones(3),
     )
 
 
@@ -135,5 +144,70 @@ def test_task_imbalance_does_not_fire_when_tasks_are_reasonably_balanced():
     summaries += [_summary(episode_index=30 + i, task="push the block") for i in range(20)]
 
     findings = TaskImbalanceCheck().run_dataset(summaries)
+
+    assert findings == []
+
+
+def test_low_diversity_fires_when_all_episodes_traverse_near_identical_trajectories():
+    rng = np.random.default_rng(10)
+    # dataset-wide range is large (0 to 10), but every episode's own mean pose
+    # is nearly identical -- centroids barely spread relative to that range.
+    summaries = [
+        _summary(
+            episode_index=i,
+            joint_means=np.array([5.0, 5.0]) + rng.normal(scale=0.01, size=2),
+            joint_mins=np.array([0.0, 0.0]),
+            joint_maxs=np.array([10.0, 10.0]),
+        )
+        for i in range(30)
+    ]
+
+    findings = LowDiversityCheck().run_dataset(summaries)
+
+    assert len(findings) == 1
+    assert findings[0].check == "LOW_DIVERSITY"
+    assert findings[0].severity == "warning"
+
+
+def test_low_diversity_does_not_fire_when_episodes_cover_the_workspace():
+    rng = np.random.default_rng(10)
+    summaries = [
+        _summary(
+            episode_index=i,
+            joint_means=rng.uniform(0.0, 10.0, size=2),  # spread across the full range
+            joint_mins=np.array([0.0, 0.0]),
+            joint_maxs=np.array([10.0, 10.0]),
+        )
+        for i in range(30)
+    ]
+
+    findings = LowDiversityCheck().run_dataset(summaries)
+
+    assert findings == []
+
+
+def test_low_diversity_does_not_crash_on_a_large_dataset():
+    # exercises the subsample cap (500+ episodes) -- must not attempt an
+    # uncapped O(n^2) pairwise distance matrix, and must still complete fast.
+    rng = np.random.default_rng(10)
+    summaries = [
+        _summary(
+            episode_index=i,
+            joint_means=rng.uniform(0.0, 10.0, size=2),
+            joint_mins=np.array([0.0, 0.0]),
+            joint_maxs=np.array([10.0, 10.0]),
+        )
+        for i in range(800)
+    ]
+
+    findings = LowDiversityCheck().run_dataset(summaries)
+
+    assert findings == []  # well-diversified synthetic data -- just confirming no crash/hang
+
+
+def test_low_diversity_does_not_crash_on_a_single_episode():
+    summaries = [_summary(episode_index=0)]
+
+    findings = LowDiversityCheck().run_dataset(summaries)
 
     assert findings == []
