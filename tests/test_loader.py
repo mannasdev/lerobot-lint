@@ -10,11 +10,12 @@ REAL_REPO_ID = "lerobot/pusht"
 
 
 def test_iter_episodes_yields_index_and_episode_data_for_real_dataset():
-    episodes = list(iter_episodes(REAL_REPO_ID, episode_indices=[0], download_videos=False))
+    results = list(iter_episodes(REAL_REPO_ID, episode_indices=[0], download_videos=False))
 
-    assert len(episodes) == 1
-    index, ep = episodes[0]
+    assert len(results) == 1
+    index, ep, error = results[0]
     assert index == 0
+    assert error is None
     assert isinstance(ep, EpisodeData)
     assert ep.states.ndim == 2
     assert ep.actions.shape == ep.states.shape
@@ -26,24 +27,47 @@ def test_iter_episodes_yields_index_and_episode_data_for_real_dataset():
 def test_iter_episodes_preserves_real_index_for_a_non_contiguous_subset():
     # requesting episode 3 specifically must yield index=3, not 0 (enumerate
     # position) -- callers (e.g. the CLI engine) need the real dataset index.
-    episodes = list(iter_episodes(REAL_REPO_ID, episode_indices=[3], download_videos=False))
+    results = list(iter_episodes(REAL_REPO_ID, episode_indices=[3], download_videos=False))
 
-    assert len(episodes) == 1
-    index, _ep = episodes[0]
+    assert len(results) == 1
+    index, _ep, _error = results[0]
     assert index == 3
 
 
 def test_iter_episodes_states_are_float32_numpy():
-    episodes = list(iter_episodes(REAL_REPO_ID, episode_indices=[0], download_videos=False))
-    _index, ep = episodes[0]
+    results = list(iter_episodes(REAL_REPO_ID, episode_indices=[0], download_videos=False))
+    _index, ep, _error = results[0]
 
     assert isinstance(ep.states, np.ndarray)
     assert ep.states.dtype == np.float32
 
 
 def test_iter_episodes_timestamps_start_at_zero_and_increase():
-    episodes = list(iter_episodes(REAL_REPO_ID, episode_indices=[0], download_videos=False))
-    _index, ep = episodes[0]
+    results = list(iter_episodes(REAL_REPO_ID, episode_indices=[0], download_videos=False))
+    _index, ep, _error = results[0]
 
     assert ep.timestamps[0] == 0.0
     assert (np.diff(ep.timestamps) > 0).all()
+
+
+def test_iter_episodes_one_bad_episode_does_not_abort_the_rest():
+    # pusht has 206 episodes (0-205) -- 99999 is guaranteed out of range and
+    # will fail to load, mixed with two real, loadable episodes. A single
+    # corrupt/missing episode must not prevent the others from being checked.
+    results = list(iter_episodes(REAL_REPO_ID, episode_indices=[0, 99999, 1], download_videos=False))
+
+    assert len(results) == 3
+    by_index = {index: (ep, error) for index, ep, error in results}
+
+    ep0, error0 = by_index[0]
+    assert error0 is None
+    assert isinstance(ep0, EpisodeData)
+
+    ep_bad, error_bad = by_index[99999]
+    assert ep_bad is None
+    assert error_bad is not None
+    assert "99999" in error_bad
+
+    ep1, error1 = by_index[1]
+    assert error1 is None
+    assert isinstance(ep1, EpisodeData)

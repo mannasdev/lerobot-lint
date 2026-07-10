@@ -53,13 +53,21 @@ def iter_episodes(
     repo_id_or_path: str,
     episode_indices: list[int] | None = None,
     download_videos: bool = True,
-) -> Iterator[tuple[int, EpisodeData]]:
+) -> Iterator[tuple[int, EpisodeData | None, str | None]]:
     """Stream one episode at a time from a LeRobotDataset, never loading the whole
     dataset's frame data into RAM at once. `episode_indices=None` iterates every
-    episode in the dataset. Yields (real_episode_index, EpisodeData) -- the real
-    dataset index, not an enumerate() position, since callers (e.g. the CLI
-    engine, or per-episode error reporting) need to know which actual episode
-    a finding belongs to, especially when a non-contiguous subset is requested."""
+    episode in the dataset.
+
+    Yields (real_episode_index, EpisodeData_or_None, error_message_or_None). The
+    real dataset index is always the real one, not an enumerate() position --
+    callers need to know which actual episode a finding or error belongs to,
+    especially when a non-contiguous subset is requested.
+
+    A single episode failing to load (corrupt shard, out-of-range index) does
+    NOT abort the run -- it's reported via the error slot (episode=None,
+    error=message) and iteration continues with the remaining episodes. Only a
+    whole-dataset failure (can't even read metadata) raises DatasetLoadError,
+    since there is nothing to iterate over at all in that case."""
     from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
     try:
@@ -71,8 +79,6 @@ def iter_episodes(
 
     for i in indices:
         try:
-            yield i, _load_one_episode(repo_id_or_path, i, meta, download_videos)
-        except DatasetLoadError:
-            raise
+            yield i, _load_one_episode(repo_id_or_path, i, meta, download_videos), None
         except Exception as e:
-            raise DatasetLoadError(f"Could not load episode {i} of {repo_id_or_path!r}: {e}") from e
+            yield i, None, f"Could not load episode {i} of {repo_id_or_path!r}: {e}"
