@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from lerobot_lint.types import EpisodeData
+from lerobot_lint.types import CameraSample, EpisodeData
 
 
 def _make_episode(n_frames=10, n_joints=6):
@@ -44,3 +44,11 @@ def test_episode_data_rejects_mismatched_action_state_length():
             task="pick up the block",
             camera_handles={},
         )
+
+
+def test_camera_sample_holds_total_frame_count_and_sampled_frames():
+    frames = np.zeros((10, 8, 8, 3), dtype=np.uint8)
+    sample = CameraSample(total_frame_count=300, frames=frames)
+
+    assert sample.total_frame_count == 300
+    assert sample.frames.shape == (10, 8, 8, 3)

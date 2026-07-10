@@ -33,6 +33,17 @@ class EpisodeData:
 
 
 @dataclass
+class CameraSample:
+    """A camera's sampled frames plus the video's actual total frame count --
+    D1 (VIDEO_LENGTH_MISMATCH) needs the total; D2/D3 operate on the cheap
+    sampled subset. Populated by loader.py's windowed sampling, never a full
+    frame-by-frame decode."""
+
+    total_frame_count: int
+    frames: np.ndarray
+
+
+@dataclass
 class Finding:
     """One check result. episode/joint may be None for dataset-level (Group E)
     findings that aren't scoped to a single episode or joint."""
