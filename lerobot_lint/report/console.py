@@ -6,6 +6,7 @@ from collections import Counter
 
 from rich.console import Console
 
+from lerobot_lint.report.finding_summary import finding_summary
 from lerobot_lint.types import Finding
 
 SEVERITY_ORDER = ["error", "warning", "info"]
@@ -29,8 +30,7 @@ def render_console_report(findings: list[Finding], repo_id_or_path: str) -> str:
             continue
         console.print(f"[bold]{SEVERITY_LABELS[severity]} ({len(group)})[/bold]")
         for finding in group:
-            episode_str = f"episode {finding.episode}" if finding.episode is not None else "dataset"
-            console.print(f"  [{finding.check}] {episode_str}: {finding.message}")
+            console.print(f"  {finding_summary(finding)}", markup=False)
         console.print()
 
     counts = Counter(f.severity for f in findings)
