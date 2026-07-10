@@ -149,3 +149,55 @@ class JitterCheck(Check):
                 )
             )
         return findings
+
+
+class DiscontinuityCheck(Check):
+    """A4. Single-frame teleport: a jump of more than half the joint's observed
+    range in one frame -- the classic 12-bit encoder wraparound bug (wrist_roll
+    wrapping at 2047/4096 counts). Named explicitly in the message so a report
+    reads like someone who's felt this pain, not a generic anomaly flag."""
+
+    id = "DISCONTINUITY"
+    severity = "error"
+    scope = "episode"
+
+    RANGE_FRACTION_THRESHOLD = 0.5
+
+    def run(self, episode: EpisodeData, episode_index: int) -> list[Finding]:
+        n_joints = episode.states.shape[1]
+        findings = []
+
+        for joint_index in range(n_joints):
+            values = episode.states[:, joint_index]
+            joint_range = float(np.max(values) - np.min(values))
+            if joint_range == 0.0:
+                continue
+
+            deltas = np.diff(values)
+            jump_frames = np.nonzero(np.abs(deltas) > self.RANGE_FRACTION_THRESHOLD * joint_range)[0]
+            if jump_frames.size == 0:
+                continue
+
+            worst_delta_idx = int(jump_frames[np.argmax(np.abs(deltas[jump_frames]))])
+            worst_delta = float(deltas[worst_delta_idx])
+            worst_frame = worst_delta_idx + 1  # the frame the bad value lands on
+            findings.append(
+                Finding(
+                    check=self.id,
+                    severity=self.severity,
+                    episode=episode_index,
+                    joint=str(joint_index),
+                    frames=[worst_frame],
+                    message=(
+                        f"Single-frame jump of {abs(worst_delta):.3f} "
+                        f"({abs(worst_delta) / joint_range:.0%} of observed range) on "
+                        f"joint {joint_index} at frame {worst_frame} -- likely encoder wraparound"
+                    ),
+                    data={
+                        "joint_index": joint_index,
+                        "delta": worst_delta,
+                        "range_fraction": abs(worst_delta) / joint_range,
+                    },
+                )
+            )
+        return findings

@@ -1,6 +1,11 @@
 import numpy as np
 
-from lerobot_lint.checks.kinematic import DeadJointCheck, JitterCheck, SaturatedJointCheck
+from lerobot_lint.checks.kinematic import (
+    DeadJointCheck,
+    DiscontinuityCheck,
+    JitterCheck,
+    SaturatedJointCheck,
+)
 from lerobot_lint.types import EpisodeData
 
 
@@ -131,3 +136,33 @@ def test_jitter_escalates_to_error_above_2_percent_of_frames():
 
     assert len(findings) == 1
     assert findings[0].severity == "error"
+
+
+def test_discontinuity_fires_on_encoder_wraparound():
+    # simulates a 12-bit encoder wraparound: wrist_roll oscillates smoothly in a
+    # small band, then teleports by ~the full observed range in a single frame.
+    n_frames, n_joints = 100, 2
+    states = np.zeros((n_frames, n_joints))
+    states[:, 0] = np.sin(np.linspace(0, 4 * np.pi, n_frames)) * 0.1  # small smooth wiggle
+    states[50:, 0] += 6.0  # single-frame teleport of ~6.0, dwarfing the 0.2 wiggle range
+
+    ep = _episode_with_states(states)
+    findings = DiscontinuityCheck().run(ep, episode_index=0)
+
+    assert len(findings) == 1
+    assert findings[0].check == "DISCONTINUITY"
+    assert findings[0].severity == "error"
+    assert findings[0].data["joint_index"] == 0
+    assert 50 in findings[0].frames
+    assert "wraparound" in findings[0].message.lower()
+
+
+def test_discontinuity_does_not_fire_on_smooth_motion():
+    n_frames, n_joints = 100, 2
+    states = np.zeros((n_frames, n_joints))
+    states[:, 0] = np.sin(np.linspace(0, 4 * np.pi, n_frames))
+
+    ep = _episode_with_states(states)
+    findings = DiscontinuityCheck().run(ep, episode_index=0)
+
+    assert findings == []
