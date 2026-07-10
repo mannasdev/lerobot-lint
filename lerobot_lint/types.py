@@ -61,3 +61,32 @@ class Finding:
             raise ValueError(
                 f"severity must be one of {VALID_SEVERITIES}, got {self.severity!r}"
             )
+
+
+@dataclass
+class EpisodeSummary:
+    """The lightweight, per-episode record pass 1 emits and pass 2 accumulates
+    for Group E's dataset-scoped checks. Deliberately excludes raw per-frame
+    arrays -- that's the entire point of a two-pass streaming design: raw
+    state/action data is discarded once an episode's per-episode checks and
+    this summary have been computed."""
+
+    episode_index: int
+    frame_count: int
+    duration: float
+    task: str
+    joint_means: np.ndarray
+    joint_mins: np.ndarray
+    joint_maxs: np.ndarray
+
+
+def summarize_episode(episode: EpisodeData, episode_index: int) -> EpisodeSummary:
+    return EpisodeSummary(
+        episode_index=episode_index,
+        frame_count=episode.states.shape[0],
+        duration=float(episode.timestamps[-1] - episode.timestamps[0]),
+        task=episode.task,
+        joint_means=np.mean(episode.states, axis=0),
+        joint_mins=np.min(episode.states, axis=0),
+        joint_maxs=np.max(episode.states, axis=0),
+    )
