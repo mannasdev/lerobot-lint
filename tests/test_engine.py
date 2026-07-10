@@ -18,6 +18,17 @@ def test_check_dataset_runs_end_to_end_against_a_real_dataset():
     assert any(f.check == "TOO_FEW_EPISODES" for f in findings)
 
 
+def test_check_dataset_treats_zero_episodes_as_an_error():
+    profile = load_profile("default")
+
+    # an empty episode_indices list -- no episodes requested, none checked
+    findings = check_dataset(REAL_REPO_ID, profile, episode_indices=[], download_videos=False)
+
+    no_episodes_findings = [f for f in findings if f.check == "NO_EPISODES"]
+    assert len(no_episodes_findings) == 1
+    assert no_episodes_findings[0].severity == "error"
+
+
 def test_check_dataset_reports_a_bad_episode_without_aborting_the_rest():
     profile = load_profile("default")
 

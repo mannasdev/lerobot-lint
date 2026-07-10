@@ -28,6 +28,7 @@ from lerobot_lint.loader import iter_episodes
 from lerobot_lint.types import Finding, summarize_episode
 
 EPISODE_LOAD_ERROR_CHECK_ID = "EPISODE_LOAD_ERROR"
+NO_EPISODES_CHECK_ID = "NO_EPISODES"
 
 
 def build_episode_check_registry(profile: Profile) -> CheckRegistry:
@@ -94,6 +95,22 @@ def check_dataset(
 
         findings.extend(episode_registry.run_all(episode, index))
         summaries.append(summarize_episode(episode, index))
+
+    if not summaries and not any(f.check == EPISODE_LOAD_ERROR_CHECK_ID for f in findings):
+        # zero episodes were even attempted (not "all attempts failed", which
+        # already produces EPISODE_LOAD_ERROR findings) -- a dataset with
+        # nothing to check is an error case, not a silent pass-through.
+        findings.append(
+            Finding(
+                check=NO_EPISODES_CHECK_ID,
+                severity="error",
+                episode=None,
+                joint=None,
+                frames=[],
+                message="Dataset has no episodes to check",
+                data={},
+            )
+        )
 
     findings.extend(dataset_registry.run_all(summaries))
     return findings
