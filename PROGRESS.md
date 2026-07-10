@@ -48,6 +48,8 @@ what's next," those are "why it's designed this way."
 
 ```
 lerobot_lint/
+  __init__.py        re-exports guard, LelintCheckFailedError, LelintCheckCrashedError
+                      -- `import lerobot_lint; lerobot_lint.guard(...)` works.
   types.py           EpisodeData, Finding, CameraSample, EpisodeSummary, summarize_episode()
   config.py          Profile dataclass + load_profile() — reads profiles/*.yaml
   loader.py          real LeRobotDataset wrapper — verified against lerobot 0.6.0's
@@ -56,9 +58,13 @@ lerobot_lint/
                       episode reports its own error without aborting the rest.
   engine.py          check_dataset() -- wires loader -> both check registries ->
                       two-pass accumulator -> combined findings. The ONE function
-                      both the CLI and the future guard() call into.
-  cli.py             the `lelint` command. check/profiles/version subcommands.
-                      0/1/2 exit codes (matches trajlens's convention).
+                      both cli.py and _guard.py call into -- neither duplicates
+                      this wiring (that's what the conformance test depends on).
+  _guard.py          the guard context manager (module named _guard, not guard --
+                      see "Naming gotcha #2" below for why).
+  cli.py             the `lelint` command: check/profiles/version subcommands.
+                      check has --profile, --episodes, --no-video, --json,
+                      --verbose. 0/1/2 exit codes (matches trajlens's convention).
   profiles/          default.yaml (generic, gripper_index=null), so101.yaml,
                       koch.yaml (both gripper_index=5, standard 6-DOF layout)
   checks/
@@ -81,21 +87,29 @@ lerobot_lint/
                       LOW_DIVERSITY (vectorized + 500-episode subsample cap
                       baked in from day one), TOO_FEW_EPISODES
   report/
-    console.py       terminal report, severity-grouped, ends with a summary count
-tests/               88 tests, all passing, mirrors lerobot_lint/ structure 1:1
+    console.py         terminal report, severity-grouped, ends with a summary count
+    json_report.py      stable schema (schema_version=1), snapshot-tested
+    finding_summary.py   shared Finding->text formatting; sanitize_text() strips
+                         control characters at the source, used by both console
+                         and json_report so neither has to remember to do it
+tests/               110 tests, all passing, mirrors lerobot_lint/ structure 1:1
 ```
 
-Run `.venv/bin/python -m pytest` — should show `88 passed`.
+Run `.venv/bin/python -m pytest` — should show `110 passed`.
 
 **Try it for real:**
 ```bash
 .venv/bin/lelint check lerobot/pusht --episodes 0:3 --no-video
+.venv/bin/lelint check lerobot/pusht --episodes 0:3 --no-video --json /tmp/report.json --verbose
+.venv/bin/python -c "import lerobot_lint; lerobot_lint.guard('lerobot/pusht', episode_indices=[0], download_videos=False).__enter__()"
 ```
 
-**27 commits**, one logical unit each — `git log --oneline` to see the build
+**31 commits**, one logical unit each — `git log --oneline` to see the build
 order. Notable ones beyond the obvious: two loader fixes caught only by
 actually wiring the engine together (real episode index vs. enumerate
-position; a single bad episode no longer kills the whole generator).
+position; a single bad episode no longer kills the whole generator); zero-
+episode datasets now correctly treated as an error (previously silent);
+and a real naming-collision bug in the package (see "Naming gotcha #2").
 
 ## IMPORTANT finding from the first real run — read before trusting any output
 
@@ -118,34 +132,25 @@ re-validate against that instead. This is exactly what the field study
 
 ## What's NOT built yet — in the order it should happen
 
-1. **`report/json_report.py`** — stable schema, snapshot-tested (per source
-   spec §5). `report/finding_summary.py` — shared text-formatting helper used
-   by both console and the future bug-card renderer; sanitizes control
-   characters at the source since dataset-derived strings (task descriptions)
-   are untrusted (per the CEO review's security fix) — **not built yet**,
-   console.py currently formats messages inline, not through a shared helper.
-2. **The A-F scorecard formula** — mentioned in the source spec, not designed
-   or implemented anywhere yet. Needs the field study's calibration data.
-3. **`lerobot_lint.guard()`** — context manager, raises `LelintCheckFailedError`
-   only on severity=error, raises a *distinct* `LelintCheckCrashedError` if a
-   check itself crashes. Needs a conformance test proving it agrees with the
-   CLI on the same fixture (both should call `engine.check_dataset()` —
-   don't let guard() reimplement any of engine.py's wiring).
-4. **`report/render.py`** — the bug-card renderer (static SVG→raster export,
+1. **The A-F scorecard formula** — mentioned in the source spec, not designed
+   or implemented anywhere yet (`json_report.py`'s `"grade"` field is `None`
+   on purpose). Needs the field study's calibration data.
+2. **`report/render.py`** — the bug-card renderer (static SVG→raster export,
    pure-Python rasterizer, no external binary). Plots the anomaly for
    spike-type findings AND static/binary ones (frozen camera, dead joint).
-5. **Real video decode** in `loader.py` — actually calling `av`/opencv to
+   Can reuse `finding_summary()` for the text half.
+3. **Real video decode** in `loader.py` — actually calling `av`/opencv to
    produce `CameraSample` objects (windowed sampling: 3 windows of 10 truly-
    consecutive frames per camera). See "Known environment issue" below.
-6. **`--verbose` flag, `--json out.json` flag, `--fail-on` flag** — cli.py
-   currently only has `--profile`, `--episodes`, `--no-video`. Missing pieces
-   from the source spec's CLI surface.
-7. **Auto-profile detection** (item 4 from the CEO plan) — detect robot type
+4. **`--fail-on error|warning` flag** — cli.py has `--profile`, `--episodes`,
+   `--no-video`, `--json`, `--verbose` now; `--fail-on` is the one remaining
+   piece from the source spec's CLI surface.
+5. **Auto-profile detection** (item 4 from the CEO plan) — detect robot type
    from joint naming convention, suggest a profile, always print which
    profile was used (auto-detected or not — must never be silent).
-8. **Packaging** — CI/CD, PyPI publish workflow with a post-publish smoke test,
+6. **Packaging** — CI/CD, PyPI publish workflow with a post-publish smoke test,
    `CONTRIBUTING.md` + `ARCHITECTURE.md`.
-9. **Field study** — run against 30-50 real public Hub datasets (**with real
+7. **Field study** — run against 30-50 real public Hub datasets (**with real
    arm datasets this time, not pusht** — see the finding above), calibrate
    every threshold, produce the launch post.
 
@@ -164,7 +169,7 @@ becomes the default if decode isn't reliable). Two implications:
   `LeRobotDataset`'s torchcodec path, which may not hit the same linkage issue
   — untested, check first.
 
-## Naming gotcha (fixed once already, easy to reintroduce)
+## Naming gotcha #1 (fixed once already, easy to reintroduce)
 
 Package import name is **`lerobot_lint`**, not `lelint`. `lelint` is the CLI
 command name only (`pip install lerobot-lint` gives you `lelint` on your PATH
@@ -172,11 +177,29 @@ and `import lerobot_lint` in Python). Got this wrong once already across an
 entire CEO-review document and had to fix it — double-check any new code/docs
 against this before writing `lelint.` as a Python import path.
 
+## Naming gotcha #2 (a real bug, now fixed — don't reintroduce the pattern)
+
+The `guard` context manager lives in **`lerobot_lint/_guard.py`** (underscore
+prefix), not `guard.py`. Reason: `lerobot_lint/__init__.py` re-exports the
+`guard` class at the package's top level (`lerobot_lint.guard(...)` is the
+public API). If the module were named `guard.py`, `lerobot_lint.guard` would
+ambiguously refer to either the submodule or the re-exported class — and the
+class always wins once `__init__.py` has run, because `from lerobot_lint.foo
+import bar` rebinds the name `bar` in the package's own namespace, overwriting
+whatever the import machinery set for the submodule. This isn't just a
+"don't do `from lerobot_lint import guard as x`" footgun — **even `import
+lerobot_lint.guard as x` is shadowed the same way**, since Python's `import
+a.b as c` resolves via attribute access on `a`, not `sys.modules['a.b']`
+directly (this surprised me when I first hit it). If any future module needs
+to be re-exported under the same name at the package's top level, name the
+module itself something else (a leading underscore, or a distinct name) —
+don't rely on any import spelling to disambiguate after the fact.
+
 ## Quick start for a new session
 
 ```bash
 cd /Users/mannas/Desktop/Projects/lerobot-lint
-.venv/bin/python -m pytest                              # confirm 88 passed
+.venv/bin/python -m pytest                              # confirm 110 passed
 .venv/bin/lelint check lerobot/pusht --episodes 0:3 --no-video   # see it run
 git log --oneline                                        # see what's been built
 ```
