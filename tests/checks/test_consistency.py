@@ -1,6 +1,6 @@
 import numpy as np
 
-from lerobot_lint.checks.consistency import ActionStateDivergenceCheck
+from lerobot_lint.checks.consistency import ActionRangeMismatchCheck, ActionStateDivergenceCheck
 from lerobot_lint.types import EpisodeData
 
 
@@ -49,5 +49,33 @@ def test_does_not_fire_with_small_realistic_tracking_lag():
 
     ep = _episode(states, actions)
     findings = ActionStateDivergenceCheck().run(ep, episode_index=0)
+
+    assert findings == []
+
+
+def test_range_mismatch_fires_when_action_values_fall_outside_state_range():
+    n_frames, n_joints = 100, 2
+    rng = np.random.default_rng(6)
+    # states in radians, roughly [-3, 3]; actions normalized to [-1, 1] but
+    # never actually overlapping the state's observed range (e.g. offset units)
+    states = rng.uniform(-3.0, 3.0, size=(n_frames, n_joints))
+    actions = rng.uniform(10.0, 12.0, size=(n_frames, n_joints))
+
+    ep = _episode(states, actions)
+    findings = ActionRangeMismatchCheck().run(ep, episode_index=0)
+
+    assert len(findings) == n_joints
+    assert all(f.check == "ACTION_RANGE_MISMATCH" for f in findings)
+    assert all(f.severity == "info" for f in findings)
+
+
+def test_range_mismatch_does_not_fire_when_action_and_state_share_a_range():
+    n_frames, n_joints = 100, 2
+    rng = np.random.default_rng(6)
+    states = rng.uniform(-3.0, 3.0, size=(n_frames, n_joints))
+    actions = rng.uniform(-3.0, 3.0, size=(n_frames, n_joints))
+
+    ep = _episode(states, actions)
+    findings = ActionRangeMismatchCheck().run(ep, episode_index=0)
 
     assert findings == []

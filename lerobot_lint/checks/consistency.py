@@ -49,3 +49,50 @@ class ActionStateDivergenceCheck(Check):
                     )
                 )
         return findings
+
+
+class ActionRangeMismatchCheck(Check):
+    """B2. Action values outside the state's observed range (or in obviously
+    different units, e.g. actions in [-1,1] while states are in radians) ->
+    normalization confusion downstream."""
+
+    id = "ACTION_RANGE_MISMATCH"
+    severity = "info"
+    scope = "episode"
+
+    OUTSIDE_FRACTION_THRESHOLD = 0.5
+
+    def run(self, episode: EpisodeData, episode_index: int) -> list[Finding]:
+        n_joints = episode.states.shape[1]
+        findings = []
+
+        for joint_index in range(n_joints):
+            state = episode.states[:, joint_index]
+            action = episode.actions[:, joint_index]
+            state_min, state_max = float(np.min(state)), float(np.max(state))
+
+            outside = (action < state_min) | (action > state_max)
+            outside_fraction = float(np.mean(outside))
+
+            if outside_fraction > self.OUTSIDE_FRACTION_THRESHOLD:
+                findings.append(
+                    Finding(
+                        check=self.id,
+                        severity=self.severity,
+                        episode=episode_index,
+                        joint=str(joint_index),
+                        frames=[],
+                        message=(
+                            f"Joint {joint_index}'s action values fall outside the "
+                            f"observed state range [{state_min:.3f}, {state_max:.3f}] "
+                            f"{outside_fraction:.0%} of the time -- possible "
+                            f"normalization/unit mismatch"
+                        ),
+                        data={
+                            "joint_index": joint_index,
+                            "outside_fraction": outside_fraction,
+                            "state_range": [state_min, state_max],
+                        },
+                    )
+                )
+        return findings
