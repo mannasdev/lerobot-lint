@@ -3,6 +3,7 @@ import numpy as np
 from lerobot_lint.checks.kinematic import (
     DeadJointCheck,
     DiscontinuityCheck,
+    FrozenStateCheck,
     JitterCheck,
     SaturatedJointCheck,
 )
@@ -164,5 +165,56 @@ def test_discontinuity_does_not_fire_on_smooth_motion():
 
     ep = _episode_with_states(states)
     findings = DiscontinuityCheck().run(ep, episode_index=0)
+
+    assert findings == []
+
+
+def test_frozen_state_fires_on_a_mid_episode_freeze_over_15_frames():
+    n_frames, n_joints, fps = 100, 3 , 30.0
+    rng = np.random.default_rng(3)
+    states = rng.normal(size=(n_frames, n_joints))
+    states[40:60] = states[40]  # 20 identical frames mid-episode -- a recorder hiccup
+
+    ep = _episode_with_states(states, fps=fps)
+    findings = FrozenStateCheck().run(ep, episode_index=0)
+
+    assert len(findings) == 1
+    assert findings[0].check == "FROZEN_STATE"
+    assert findings[0].severity == "error"
+    assert findings[0].data["freeze_length"] == 20
+
+
+def test_frozen_state_does_not_fire_on_a_short_mid_episode_freeze():
+    n_frames, n_joints, fps = 100, 3, 30.0
+    rng = np.random.default_rng(3)
+    states = rng.normal(size=(n_frames, n_joints))
+    states[40:50] = states[40]  # only 10 identical frames -- below the 15-frame threshold
+
+    ep = _episode_with_states(states, fps=fps)
+    findings = FrozenStateCheck().run(ep, episode_index=0)
+
+    assert findings == []
+
+
+def test_frozen_state_ignores_settling_at_episode_start_and_end():
+    n_frames, n_joints, fps = 100, 3, 30.0
+    rng = np.random.default_rng(3)
+    states = rng.normal(size=(n_frames, n_joints))
+    states[:20] = states[0]  # 20 identical frames at the very start -- settling, expected
+    states[-20:] = states[-1]  # 20 identical frames at the very end -- settling, expected
+
+    ep = _episode_with_states(states, fps=fps)
+    findings = FrozenStateCheck().run(ep, episode_index=0)
+
+    assert findings == []
+
+
+def test_frozen_state_does_not_fire_on_freely_moving_data():
+    n_frames, n_joints, fps = 100, 3, 30.0
+    rng = np.random.default_rng(3)
+    states = rng.normal(size=(n_frames, n_joints))
+
+    ep = _episode_with_states(states, fps=fps)
+    findings = FrozenStateCheck().run(ep, episode_index=0)
 
     assert findings == []

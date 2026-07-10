@@ -201,3 +201,59 @@ class DiscontinuityCheck(Check):
                 )
             )
         return findings
+
+
+class FrozenStateCheck(Check):
+    """A5. Consecutive identical state vectors for more than freeze_frames (source-
+    spec default: 15 frames at 30fps = 0.5s) mid-episode -> recorder hiccup or
+    serial dropout. Runs touching episode start/end are exempt -- settling there
+    is normal, not a bug."""
+
+    id = "FROZEN_STATE"
+    severity = "error"
+    scope = "episode"
+
+    FREEZE_FRAMES_THRESHOLD = 15
+
+    def run(self, episode: EpisodeData, episode_index: int) -> list[Finding]:
+        n_frames = episode.states.shape[0]
+        if n_frames < 2:
+            return []
+
+        same_as_previous = np.all(episode.states[1:] == episode.states[:-1], axis=1)
+
+        findings = []
+        run_start = None
+        for i, is_same in enumerate(same_as_previous):
+            frame = i + 1  # same_as_previous[i] compares frame i+1 to frame i
+            if is_same:
+                if run_start is None:
+                    run_start = frame - 1
+            elif run_start is not None:
+                findings.extend(self._maybe_flag_run(run_start, frame - 1, n_frames, episode_index))
+                run_start = None
+        if run_start is not None:
+            findings.extend(self._maybe_flag_run(run_start, n_frames - 1, n_frames, episode_index))
+        return findings
+
+    def _maybe_flag_run(self, start: int, end: int, n_frames: int, episode_index: int) -> list[Finding]:
+        length = end - start + 1
+        touches_start = start == 0
+        touches_end = end == n_frames - 1
+        if length <= self.FREEZE_FRAMES_THRESHOLD or touches_start or touches_end:
+            return []
+        return [
+            Finding(
+                check=self.id,
+                severity=self.severity,
+                episode=episode_index,
+                joint=None,
+                frames=list(range(start, end + 1)),
+                message=(
+                    f"State frozen (identical for {length} consecutive frames) "
+                    f"from frame {start} to {end} -- likely a recorder hiccup or "
+                    f"serial dropout"
+                ),
+                data={"freeze_length": length, "freeze_start": start, "freeze_end": end},
+            )
+        ]
