@@ -2,15 +2,28 @@
 and the 0/1/2 exit-code contract (matches trajlens's convention, so tooling
 written against one behaves the same against the other)."""
 
+import json
+import platform
+
 import typer
 
 from lerobot_lint.config import load_profile
 from lerobot_lint.engine import check_dataset
 from lerobot_lint.loader import DatasetLoadError
 from lerobot_lint.report.console import render_console_report
+from lerobot_lint.report.json_report import render_json_report
 from lerobot_lint.types import Finding
 
 app = typer.Typer()
+
+
+def _debug_context(repo_id_or_path: str) -> str:
+    from importlib.metadata import version as pkg_version
+
+    return (
+        f"lerobot-lint {pkg_version('lerobot-lint')} | "
+        f"python {platform.python_version()} | dataset: {repo_id_or_path}"
+    )
 
 
 def determine_exit_code(findings: list[Finding]) -> int:
@@ -39,6 +52,8 @@ def check(
     profile: str = typer.Option("default", help="Robot profile: default, so101, koch"),
     episodes: str | None = typer.Option(None, "--episodes", help="Episode range, e.g. 0:50"),
     no_video: bool = typer.Option(False, "--no-video", help="Skip camera/video checks entirely"),
+    json_out: str | None = typer.Option(None, "--json", help="Also write a JSON report to this path"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print debug context on error/crash"),
 ) -> None:
     """Check a LeRobotDataset for behavioral/kinematic data bugs."""
     loaded_profile = load_profile(profile)
@@ -53,10 +68,28 @@ def check(
         )
     except DatasetLoadError as e:
         typer.echo(f"Could not load dataset: {e}", err=True)
+        if verbose:
+            typer.echo(_debug_context(repo_id_or_path), err=True)
+            typer.echo(f"Full error: {e!r}", err=True)
+        raise typer.Exit(code=2) from e
+    except Exception as e:
+        # never let an unexpected crash surface as a raw traceback to a stranger
+        typer.echo(f"lelint crashed unexpectedly: {e}", err=True)
+        if verbose:
+            typer.echo(_debug_context(repo_id_or_path), err=True)
+            import traceback
+
+            typer.echo(traceback.format_exc(), err=True)
         raise typer.Exit(code=2) from e
 
     report = render_console_report(findings, repo_id_or_path)
     typer.echo(report)
+
+    if json_out is not None:
+        json_report = render_json_report(findings, repo_id_or_path, profile)
+        with open(json_out, "w") as f:
+            json.dump(json_report, f, indent=2)
+
     raise typer.Exit(code=determine_exit_code(findings))
 
 
