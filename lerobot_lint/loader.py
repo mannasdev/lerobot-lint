@@ -53,10 +53,13 @@ def iter_episodes(
     repo_id_or_path: str,
     episode_indices: list[int] | None = None,
     download_videos: bool = True,
-) -> Iterator[EpisodeData]:
+) -> Iterator[tuple[int, EpisodeData]]:
     """Stream one episode at a time from a LeRobotDataset, never loading the whole
     dataset's frame data into RAM at once. `episode_indices=None` iterates every
-    episode in the dataset."""
+    episode in the dataset. Yields (real_episode_index, EpisodeData) -- the real
+    dataset index, not an enumerate() position, since callers (e.g. the CLI
+    engine, or per-episode error reporting) need to know which actual episode
+    a finding belongs to, especially when a non-contiguous subset is requested."""
     from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
     try:
@@ -68,7 +71,7 @@ def iter_episodes(
 
     for i in indices:
         try:
-            yield _load_one_episode(repo_id_or_path, i, meta, download_videos)
+            yield i, _load_one_episode(repo_id_or_path, i, meta, download_videos)
         except DatasetLoadError:
             raise
         except Exception as e:
