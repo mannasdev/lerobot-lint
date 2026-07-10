@@ -225,3 +225,35 @@ class LowDiversityCheck(DatasetCheck):
                 )
             ]
         return []
+
+
+class TooFewEpisodesCheck(DatasetCheck):
+    """E6. Fewer than 30 episodes for a single task -- a community rule of
+    thumb for ACT-class training, cited as a heuristic, not a law."""
+
+    id = "TOO_FEW_EPISODES"
+    severity = "info"
+    scope = "dataset"
+
+    MIN_EPISODES_PER_TASK = 30
+
+    def run_dataset(self, summaries: list[EpisodeSummary]) -> list[Finding]:
+        task_counts = Counter(s.task for s in summaries)
+        findings = []
+        for task, count in task_counts.items():
+            if count < self.MIN_EPISODES_PER_TASK:
+                findings.append(
+                    Finding(
+                        check=self.id,
+                        severity=self.severity,
+                        episode=None,
+                        joint=None,
+                        frames=[],
+                        message=(
+                            f"Task {task!r} has only {count} episodes (community rule "
+                            f"of thumb for ACT-class training: {self.MIN_EPISODES_PER_TASK}+)"
+                        ),
+                        data={"task": task, "count": count},
+                    )
+                )
+        return findings

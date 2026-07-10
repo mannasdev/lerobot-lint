@@ -6,6 +6,7 @@ from lerobot_lint.checks.hygiene import (
     MissingTaskCheck,
     ShortEpisodeCheck,
     TaskImbalanceCheck,
+    TooFewEpisodesCheck,
 )
 from lerobot_lint.types import EpisodeSummary
 
@@ -211,3 +212,33 @@ def test_low_diversity_does_not_crash_on_a_single_episode():
     findings = LowDiversityCheck().run_dataset(summaries)
 
     assert findings == []
+
+
+def test_too_few_episodes_fires_when_a_task_has_under_30_episodes():
+    summaries = [_summary(episode_index=i, task="pick up the block") for i in range(20)]
+
+    findings = TooFewEpisodesCheck().run_dataset(summaries)
+
+    assert len(findings) == 1
+    assert findings[0].check == "TOO_FEW_EPISODES"
+    assert findings[0].severity == "info"
+    assert findings[0].data["task"] == "pick up the block"
+    assert findings[0].data["count"] == 20
+
+
+def test_too_few_episodes_does_not_fire_at_30_or_more():
+    summaries = [_summary(episode_index=i, task="pick up the block") for i in range(30)]
+
+    findings = TooFewEpisodesCheck().run_dataset(summaries)
+
+    assert findings == []
+
+
+def test_too_few_episodes_checks_each_task_independently():
+    summaries = [_summary(episode_index=i, task="pick up the block") for i in range(40)]
+    summaries += [_summary(episode_index=40 + i, task="push the block") for i in range(10)]
+
+    findings = TooFewEpisodesCheck().run_dataset(summaries)
+
+    assert len(findings) == 1
+    assert findings[0].data["task"] == "push the block"
