@@ -39,18 +39,28 @@ what's next," those are "why it's designed this way."
   and negative test (clean data, assert it doesn't).
 - **Commit after every logical change.** Meaningful, specific commit messages.
   **No `Co-Authored-By` trailer** — commits are attributed to the user only.
-  **No push** — no remote configured yet.
 - Dev environment: `.venv/` (already set up, `uv`-managed). Run tests with
   `.venv/bin/python -m pytest`.
+- **Remote is live:** `github.com/mannasdev/lerobot-lint` (public). Push when
+  asked; don't push unprompted.
 
-## Current state: all 20 checks complete, nothing runnable yet
+## Current state: the tool actually runs now
 
 ```
 lerobot_lint/
   types.py           EpisodeData, Finding, CameraSample, EpisodeSummary, summarize_episode()
+  config.py          Profile dataclass + load_profile() — reads profiles/*.yaml
   loader.py          real LeRobotDataset wrapper — verified against lerobot 0.6.0's
-                      actual API (not memory), streams one episode at a time.
-                      Tested against a live public dataset (lerobot/pusht).
+                      actual API (not memory). Streams one episode at a time.
+                      Yields (index, episode_or_None, error_or_None) -- a bad
+                      episode reports its own error without aborting the rest.
+  engine.py          check_dataset() -- wires loader -> both check registries ->
+                      two-pass accumulator -> combined findings. The ONE function
+                      both the CLI and the future guard() call into.
+  cli.py             the `lelint` command. check/profiles/version subcommands.
+                      0/1/2 exit codes (matches trajlens's convention).
+  profiles/          default.yaml (generic, gripper_index=null), so101.yaml,
+                      koch.yaml (both gripper_index=5, standard 6-DOF layout)
   checks/
     base.py          Check + DatasetCheck ABCs, CheckRegistry + DatasetCheckRegistry,
                       both with per-check crash isolation (one broken check
@@ -70,58 +80,74 @@ lerobot_lint/
                       DURATION_OUTLIER, MISSING_TASK, TASK_IMBALANCE,
                       LOW_DIVERSITY (vectorized + 500-episode subsample cap
                       baked in from day one), TOO_FEW_EPISODES
-  report/            empty package, nothing built yet
-tests/               73 tests, all passing, mirrors lerobot_lint/ structure 1:1
+  report/
+    console.py       terminal report, severity-grouped, ends with a summary count
+tests/               88 tests, all passing, mirrors lerobot_lint/ structure 1:1
 ```
 
-Run `.venv/bin/python -m pytest` — should show `73 passed`.
+Run `.venv/bin/python -m pytest` — should show `88 passed`.
 
-**20 commits**, one logical unit each — `git log --oneline` to see the build
-order (scaffold → types → loader → check engine → Group A → B → C → D →
-two-pass accumulator → Group E).
+**Try it for real:**
+```bash
+.venv/bin/lelint check lerobot/pusht --episodes 0:3 --no-video
+```
+
+**27 commits**, one logical unit each — `git log --oneline` to see the build
+order. Notable ones beyond the obvious: two loader fixes caught only by
+actually wiring the engine together (real episode index vs. enumerate
+position; a single bad episode no longer kills the whole generator).
+
+## IMPORTANT finding from the first real run — read before trusting any output
+
+`lelint check lerobot/pusht` produces a **false-positive storm** on `JITTER`
+(every episode, most frames). This is NOT a bug in the check or the wiring —
+it's a dataset-choice mistake. `pusht`'s `observation.state`/`action` are 2D
+pixel coordinates (a simulated pushing task in image space), not joint angles
+in radians. `JITTER`'s 8 rad/s threshold (a real SO-101-class hobby-servo
+default) is meaningless applied to pixel-position deltas — of course it fires
+on nearly every frame.
+
+**Implication:** `pusht` has been useful for validating the loader/engine
+*plumbing* (real API, real streaming, real error handling) but is NOT a valid
+dataset for validating the *joint-specific* checks (JITTER, DISCONTINUITY,
+SATURATED_JOINT, DEAD_JOINT, GRIPPER_INERT all assume joint-radian state).
+**Before trusting any calibration work or writing the launch post, find a
+real SO-101/Koch/6-DOF-arm dataset** (actual joint-radian state/action) and
+re-validate against that instead. This is exactly what the field study
+(days 11-12 in the source spec) is for — this is that finding arriving early.
 
 ## What's NOT built yet — in the order it should happen
 
-1. **Profiles** (`profiles/default.yaml`, `so101.yaml`, `koch.yaml`) — per-joint
-   thresholds, joint names, gripper index. Several checks already accept
-   thresholds as constructor args specifically so a profile can override them
-   (e.g. `GripperInertCheck(gripper_index=...)`) — check each check class's
-   `__init__`/class constants before assuming a default.
-2. **The CLI** (`cli.py`, `typer` app) — the thing that actually wires
-   `loader.iter_episodes()` → `CheckRegistry.run_all()` per episode →
-   `summarize_episode()` → `DatasetCheckRegistry.run_all()` at the end →
-   a report. **Nothing currently calls any of the built code end-to-end** —
-   this is the biggest remaining gap. Flags per the design doc:
-   `--json out.json`, `--episodes 0:50`, `--profile so101`, `--no-video`,
-   `--verbose`, `--fail-on error|warning`. Exit codes: 0=clean, 1=warnings,
-   2=errors-or-load-failure (matches trajlens's convention on purpose).
-3. **Reports** — `report/console.py` (rich terminal output + the A-F
-   scorecard, formula still TBD per the design doc), `report/json_report.py`
-   (stable schema, snapshot-tested), `report/finding_summary.py` (shared
-   text-formatting helper — sanitizes control characters at the source since
-   dataset-derived strings are untrusted, per the CEO review's security fix).
-4. **`lerobot_lint.guard()`** — context manager, raises `LelintCheckFailedError`
+1. **`report/json_report.py`** — stable schema, snapshot-tested (per source
+   spec §5). `report/finding_summary.py` — shared text-formatting helper used
+   by both console and the future bug-card renderer; sanitizes control
+   characters at the source since dataset-derived strings (task descriptions)
+   are untrusted (per the CEO review's security fix) — **not built yet**,
+   console.py currently formats messages inline, not through a shared helper.
+2. **The A-F scorecard formula** — mentioned in the source spec, not designed
+   or implemented anywhere yet. Needs the field study's calibration data.
+3. **`lerobot_lint.guard()`** — context manager, raises `LelintCheckFailedError`
    only on severity=error, raises a *distinct* `LelintCheckCrashedError` if a
-   check itself crashes (not the same exception — a user needs to tell "your
-   data has a bug" apart from "lelint has a bug"). Needs a conformance test
-   proving it agrees with the CLI on the same fixture.
-5. **`report/render.py`** — the bug-card renderer (static SVG→raster export,
-   pure-Python rasterizer, no external binary — keeps the macOS/Linux platform
-   promise). Plots the anomaly for spike-type findings AND static/binary ones
-   (frozen camera, dead joint) — not just text, per the outside-voice fix that
-   caught the original design over-indexing on the rarer bug type.
-6. **Real video decode** in `loader.py` — actually calling `av`/opencv to
+   check itself crashes. Needs a conformance test proving it agrees with the
+   CLI on the same fixture (both should call `engine.check_dataset()` —
+   don't let guard() reimplement any of engine.py's wiring).
+4. **`report/render.py`** — the bug-card renderer (static SVG→raster export,
+   pure-Python rasterizer, no external binary). Plots the anomaly for
+   spike-type findings AND static/binary ones (frozen camera, dead joint).
+5. **Real video decode** in `loader.py` — actually calling `av`/opencv to
    produce `CameraSample` objects (windowed sampling: 3 windows of 10 truly-
-   consecutive frames per camera, not evenly-spaced isolated frames — that
-   was a real bug caught in the eng review). See "Known environment issue"
-   below before starting this.
-7. **Packaging** — CI/CD, PyPI publish workflow with a post-publish smoke test
-   (install from PyPI into a clean venv, assert `import lerobot_lint;
-   lerobot_lint.guard(...)` works), `CONTRIBUTING.md` + `ARCHITECTURE.md`
-   (port design-doc decisions into the actual repo, not just `~/.gstack/`).
-8. **Field study** — run against 30-50 real public Hub datasets, calibrate
-   every threshold (all current thresholds are source-spec *starting*
-   defaults, explicitly not final), produce the launch post.
+   consecutive frames per camera). See "Known environment issue" below.
+6. **`--verbose` flag, `--json out.json` flag, `--fail-on` flag** — cli.py
+   currently only has `--profile`, `--episodes`, `--no-video`. Missing pieces
+   from the source spec's CLI surface.
+7. **Auto-profile detection** (item 4 from the CEO plan) — detect robot type
+   from joint naming convention, suggest a profile, always print which
+   profile was used (auto-detected or not — must never be silent).
+8. **Packaging** — CI/CD, PyPI publish workflow with a post-publish smoke test,
+   `CONTRIBUTING.md` + `ARCHITECTURE.md`.
+9. **Field study** — run against 30-50 real public Hub datasets (**with real
+   arm datasets this time, not pusht** — see the finding above), calibrate
+   every threshold, produce the launch post.
 
 ## Known environment issue (hit for real, not hypothetical)
 
@@ -132,7 +158,7 @@ design doc flagged as Group D's highest risk (the "day-9 gate": `--no-video`
 becomes the default if decode isn't reliable). Two implications:
 - `loader.iter_episodes()` currently works fine for `states`/`actions`/
   `timestamps` (reads `hf_dataset` directly, no video touched).
-- Actually wiring up video decode (step 6 above) needs either fixing the local
+- Actually wiring up video decode (item 5 above) needs either fixing the local
   ffmpeg linkage (`brew install ffmpeg` and confirm torchcodec finds it) or
   building on `av` (PyAV) directly instead of going through
   `LeRobotDataset`'s torchcodec path, which may not hit the same linkage issue
@@ -150,8 +176,11 @@ against this before writing `lelint.` as a Python import path.
 
 ```bash
 cd /Users/mannas/Desktop/Projects/lerobot-lint
-.venv/bin/python -m pytest        # confirm 73 passed before touching anything
-git log --oneline                 # see exactly what's been built, in order
+.venv/bin/python -m pytest                              # confirm 88 passed
+.venv/bin/lelint check lerobot/pusht --episodes 0:3 --no-video   # see it run
+git log --oneline                                        # see what's been built
 ```
 
-Then pick up at item 1 or 2 in "What's NOT built yet" above.
+Then pick up at item 1 in "What's NOT built yet" above — but consider finding
+a real arm dataset first (see the IMPORTANT finding section) before doing any
+threshold calibration work, since pusht will mislead you.
