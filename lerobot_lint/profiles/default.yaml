@@ -1,0 +1,7 @@
+# Conservative generic thresholds -- used when no matching hardware profile
+# exists (auto-detect fallback, or no --profile passed). Cannot know a
+# gripper index or joint names for hardware it's never seen.
+name: default
+gripper_index: null
+joint_names: null
+max_joint_velocity: 8.0

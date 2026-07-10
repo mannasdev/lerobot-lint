@@ -1,0 +1,12 @@
+# SO-101 (hobby-servo 6-DOF arm): shoulder_pan, shoulder_lift, elbow_flex,
+# wrist_flex, wrist_roll, gripper -- gripper is the last dimension.
+name: so101
+gripper_index: 5
+joint_names:
+  - shoulder_pan
+  - shoulder_lift
+  - elbow_flex
+  - wrist_flex
+  - wrist_roll
+  - gripper
+max_joint_velocity: 8.0

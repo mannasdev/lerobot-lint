@@ -1,0 +1,12 @@
+# Koch v1.1 (hobby-servo 6-DOF arm): same joint layout as SO-101 --
+# shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper.
+name: koch
+gripper_index: 5
+joint_names:
+  - shoulder_pan
+  - shoulder_lift
+  - elbow_flex
+  - wrist_flex
+  - wrist_roll
+  - gripper
+max_joint_velocity: 8.0
