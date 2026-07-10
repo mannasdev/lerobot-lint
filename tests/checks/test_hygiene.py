@@ -1,6 +1,11 @@
 import numpy as np
 
-from lerobot_lint.checks.hygiene import DurationOutlierCheck, ShortEpisodeCheck
+from lerobot_lint.checks.hygiene import (
+    DurationOutlierCheck,
+    MissingTaskCheck,
+    ShortEpisodeCheck,
+    TaskImbalanceCheck,
+)
 from lerobot_lint.types import EpisodeSummary
 
 
@@ -76,5 +81,59 @@ def test_duration_outlier_does_not_crash_on_a_single_episode():
     summaries = [_summary(episode_index=0, duration=3.0)]
 
     findings = DurationOutlierCheck().run_dataset(summaries)
+
+    assert findings == []
+
+
+def test_missing_task_fires_on_an_empty_task_string():
+    summaries = [_summary(episode_index=0, task="")]
+    findings = MissingTaskCheck().run_dataset(summaries)
+
+    assert len(findings) == 1
+    assert findings[0].check == "MISSING_TASK"
+    assert findings[0].severity == "warning"
+    assert findings[0].episode == 0
+
+
+def test_missing_task_fires_on_placeholder_task_strings():
+    for placeholder in ["test", "asdf", "TODO", "  "]:
+        summaries = [_summary(episode_index=0, task=placeholder)]
+        findings = MissingTaskCheck().run_dataset(summaries)
+        assert len(findings) == 1, f"expected a finding for task={placeholder!r}"
+
+
+def test_missing_task_does_not_fire_on_a_real_task_description():
+    summaries = [_summary(episode_index=0, task="pick up the red block and place it in the bin")]
+    findings = MissingTaskCheck().run_dataset(summaries)
+
+    assert findings == []
+
+
+def test_task_imbalance_fires_when_one_task_is_under_5_percent():
+    # 98 episodes of task A, 2 episodes of task B -- task B is 2%, under 5%
+    summaries = [_summary(episode_index=i, task="pick up the block") for i in range(98)]
+    summaries += [_summary(episode_index=98 + i, task="push the block") for i in range(2)]
+
+    findings = TaskImbalanceCheck().run_dataset(summaries)
+
+    assert len(findings) == 1
+    assert findings[0].check == "TASK_IMBALANCE"
+    assert findings[0].severity == "info"
+    assert findings[0].data["task"] == "push the block"
+
+
+def test_task_imbalance_does_not_fire_on_a_single_task_dataset():
+    summaries = [_summary(episode_index=i, task="pick up the block") for i in range(50)]
+
+    findings = TaskImbalanceCheck().run_dataset(summaries)
+
+    assert findings == []
+
+
+def test_task_imbalance_does_not_fire_when_tasks_are_reasonably_balanced():
+    summaries = [_summary(episode_index=i, task="pick up the block") for i in range(30)]
+    summaries += [_summary(episode_index=30 + i, task="push the block") for i in range(20)]
+
+    findings = TaskImbalanceCheck().run_dataset(summaries)
 
     assert findings == []

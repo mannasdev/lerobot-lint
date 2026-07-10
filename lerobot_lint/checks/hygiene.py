@@ -79,3 +79,78 @@ class DurationOutlierCheck(DatasetCheck):
                     )
                 )
         return findings
+
+
+class MissingTaskCheck(DatasetCheck):
+    """E3. Empty/placeholder task strings ("test", "asdf", "") -- the
+    junk-upload signature."""
+
+    id = "MISSING_TASK"
+    severity = "warning"
+    scope = "dataset"
+
+    PLACEHOLDER_STRINGS = {"test", "asdf", "todo", "tbd", "n/a", "na", "xxx", "placeholder"}
+    MIN_MEANINGFUL_LENGTH = 3
+
+    def _is_placeholder(self, task: str) -> bool:
+        stripped = task.strip()
+        if len(stripped) < self.MIN_MEANINGFUL_LENGTH:
+            return True
+        return stripped.lower() in self.PLACEHOLDER_STRINGS
+
+    def run_dataset(self, summaries: list[EpisodeSummary]) -> list[Finding]:
+        findings = []
+        for summary in summaries:
+            if self._is_placeholder(summary.task):
+                findings.append(
+                    Finding(
+                        check=self.id,
+                        severity=self.severity,
+                        episode=summary.episode_index,
+                        joint=None,
+                        frames=[],
+                        message=(
+                            f"Episode {summary.episode_index} has an empty or "
+                            f"placeholder task string ({summary.task!r})"
+                        ),
+                        data={"task": summary.task},
+                    )
+                )
+        return findings
+
+
+class TaskImbalanceCheck(DatasetCheck):
+    """E4. In a multi-task dataset, a task with under 5% of episodes -- likely
+    underrepresented, a policy trained on this may not generalize to it."""
+
+    id = "TASK_IMBALANCE"
+    severity = "info"
+    scope = "dataset"
+
+    MIN_FRACTION_THRESHOLD = 0.05
+
+    def run_dataset(self, summaries: list[EpisodeSummary]) -> list[Finding]:
+        task_counts = Counter(s.task for s in summaries)
+        if len(task_counts) < 2:
+            return []  # single-task dataset -- imbalance doesn't apply
+
+        total = len(summaries)
+        findings = []
+        for task, count in task_counts.items():
+            fraction = count / total
+            if fraction < self.MIN_FRACTION_THRESHOLD:
+                findings.append(
+                    Finding(
+                        check=self.id,
+                        severity=self.severity,
+                        episode=None,
+                        joint=None,
+                        frames=[],
+                        message=(
+                            f"Task {task!r} makes up only {fraction:.1%} of episodes "
+                            f"({count} of {total}) -- underrepresented"
+                        ),
+                        data={"task": task, "count": count, "fraction": fraction, "total": total},
+                    )
+                )
+        return findings
