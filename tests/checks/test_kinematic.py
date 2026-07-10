@@ -4,20 +4,21 @@ from lerobot_lint.checks.kinematic import (
     DeadJointCheck,
     DiscontinuityCheck,
     FrozenStateCheck,
+    GripperInertCheck,
     JitterCheck,
     SaturatedJointCheck,
 )
 from lerobot_lint.types import EpisodeData
 
 
-def _episode_with_states(states, fps=30.0):
+def _episode_with_states(states, fps=30.0, task="pick up the block"):
     n_frames = states.shape[0]
     return EpisodeData(
         states=states.astype(np.float32),
         actions=states.astype(np.float32),
         timestamps=np.arange(n_frames, dtype=np.float64) / fps,
         fps=fps,
-        task="pick up the block",
+        task=task,
         camera_handles={},
     )
 
@@ -216,5 +217,42 @@ def test_frozen_state_does_not_fire_on_freely_moving_data():
 
     ep = _episode_with_states(states, fps=fps)
     findings = FrozenStateCheck().run(ep, episode_index=0)
+
+    assert findings == []
+
+
+def test_gripper_inert_fires_when_gripper_never_moves_on_a_grasp_task():
+    n_frames, n_joints, gripper_index = 50, 4, 3
+    rng = np.random.default_rng(4)
+    states = rng.normal(size=(n_frames, n_joints))
+    states[:, gripper_index] = 0.0  # gripper never moves
+
+    ep = _episode_with_states(states, task="pick up the red block and place it in the bin")
+    findings = GripperInertCheck(gripper_index=gripper_index).run(ep, episode_index=0)
+
+    assert len(findings) == 1
+    assert findings[0].check == "GRIPPER_INERT"
+    assert findings[0].severity == "warning"
+
+
+def test_gripper_inert_does_not_fire_when_gripper_moves():
+    n_frames, n_joints, gripper_index = 50, 4, 3
+    rng = np.random.default_rng(4)
+    states = rng.normal(size=(n_frames, n_joints))  # gripper (col 3) varies too
+
+    ep = _episode_with_states(states, task="pick up the red block and place it in the bin")
+    findings = GripperInertCheck(gripper_index=gripper_index).run(ep, episode_index=0)
+
+    assert findings == []
+
+
+def test_gripper_inert_does_not_fire_when_task_does_not_imply_grasping():
+    n_frames, n_joints, gripper_index = 50, 4, 3
+    rng = np.random.default_rng(4)
+    states = rng.normal(size=(n_frames, n_joints))
+    states[:, gripper_index] = 0.0  # gripper never moves, but task doesn't need it to
+
+    ep = _episode_with_states(states, task="push the T-shaped block to the target")
+    findings = GripperInertCheck(gripper_index=gripper_index).run(ep, episode_index=0)
 
     assert findings == []

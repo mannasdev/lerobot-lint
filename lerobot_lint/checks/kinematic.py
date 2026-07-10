@@ -257,3 +257,50 @@ class FrozenStateCheck(Check):
                 data={"freeze_length": length, "freeze_start": start, "freeze_end": end},
             )
         ]
+
+
+class GripperInertCheck(Check):
+    """A6. Gripper dimension never changes across an episode whose task string
+    implies grasping -> the demo likely never grasped, useless for the task.
+
+    Requires a gripper_index -- profiles supply this (per source spec, robot
+    profiles carry the gripper dimension index); no default is guessed here."""
+
+    id = "GRIPPER_INERT"
+    severity = "warning"
+    scope = "episode"
+
+    GRASP_KEYWORDS = ("pick", "grasp", "place", "put", "lift", "insert")
+    STATIC_EPSILON = 1e-6
+
+    def __init__(self, gripper_index: int):
+        self.gripper_index = gripper_index
+
+    def _task_implies_grasping(self, task: str) -> bool:
+        task_lower = task.lower()
+        return any(keyword in task_lower for keyword in self.GRASP_KEYWORDS)
+
+    def run(self, episode: EpisodeData, episode_index: int) -> list[Finding]:
+        if not self._task_implies_grasping(episode.task):
+            return []
+
+        gripper_values = episode.states[:, self.gripper_index]
+        gripper_range = float(np.max(gripper_values) - np.min(gripper_values))
+        if gripper_range > self.STATIC_EPSILON:
+            return []
+
+        return [
+            Finding(
+                check=self.id,
+                severity=self.severity,
+                episode=episode_index,
+                joint=str(self.gripper_index),
+                frames=[],
+                message=(
+                    f"Gripper (joint {self.gripper_index}) never moved during a task "
+                    f"that implies grasping ({episode.task!r}) -- the demo likely "
+                    f"never grasped anything"
+                ),
+                data={"gripper_index": self.gripper_index, "task": episode.task},
+            )
+        ]
