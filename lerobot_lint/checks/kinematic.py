@@ -90,3 +90,62 @@ class SaturatedJointCheck(Check):
                     )
                 )
         return findings
+
+
+class JitterCheck(Check):
+    """A3. Physically impossible velocity spikes -> encoder noise.
+
+    Per-frame velocity |delta q| * fps exceeding max_joint_velocity (source-spec
+    default: 8 rad/s for SO-101-class hobby servos) on isolated frames. Escalates
+    to error if the spike frames exceed 2% of the episode's frames.
+    """
+
+    id = "JITTER"
+    severity = "warning"
+    scope = "episode"
+
+    MAX_JOINT_VELOCITY = 8.0  # rad/s, source-spec SO-101-class default
+    ERROR_FRACTION_THRESHOLD = 0.02
+
+    def run(self, episode: EpisodeData, episode_index: int) -> list[Finding]:
+        n_frames, n_joints = episode.states.shape
+        findings = []
+
+        for joint_index in range(n_joints):
+            values = episode.states[:, joint_index]
+            velocity = np.abs(np.diff(values)) * episode.fps
+            spike_mask = velocity > self.MAX_JOINT_VELOCITY
+
+            if not np.any(spike_mask):
+                continue
+
+            # both endpoints of a one-frame spike show up as high velocity
+            # (the jump in, and the jump back out) -- count distinct frames touched.
+            spike_deltas = np.nonzero(spike_mask)[0]
+            spike_frames = sorted(set(spike_deltas.tolist()) | set((spike_deltas + 1).tolist()))
+            spike_fraction = len(spike_frames) / n_frames
+            worst_idx = int(np.argmax(velocity))
+
+            severity = "error" if spike_fraction > self.ERROR_FRACTION_THRESHOLD else self.severity
+            findings.append(
+                Finding(
+                    check=self.id,
+                    severity=severity,
+                    episode=episode_index,
+                    joint=str(joint_index),
+                    frames=spike_frames,
+                    message=(
+                        f"Joint {joint_index} has {len(spike_frames)} frame(s) with velocity "
+                        f"exceeding {self.MAX_JOINT_VELOCITY} rad/s (worst: "
+                        f"{float(velocity[worst_idx]):.1f} rad/s at frame {worst_idx})"
+                    ),
+                    data={
+                        "joint_index": joint_index,
+                        "spike_frame_count": len(spike_frames),
+                        "spike_fraction": spike_fraction,
+                        "worst_velocity": float(velocity[worst_idx]),
+                        "worst_frame": worst_idx,
+                    },
+                )
+            )
+        return findings
