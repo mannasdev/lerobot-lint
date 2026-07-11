@@ -51,11 +51,19 @@ lerobot_lint/
   __init__.py        re-exports guard, LelintCheckFailedError, LelintCheckCrashedError
                       -- `import lerobot_lint; lerobot_lint.guard(...)` works.
   types.py           EpisodeData, Finding, CameraSample, EpisodeSummary, summarize_episode()
-  config.py          Profile dataclass + load_profile() — reads profiles/*.yaml
+  config.py          Profile dataclass + load_profile() — reads profiles/*.yaml.
+                      list_profile_names() enumerates profiles/*.yaml (no more
+                      hardcoded lists). detect_profile_name(joint_names) matches
+                      a dataset's joint names against a known profile's
+                      convention, used for CLI auto-detection.
   loader.py          real LeRobotDataset wrapper — verified against lerobot 0.6.0's
                       actual API (not memory). Streams one episode at a time.
                       Yields (index, episode_or_None, error_or_None) -- a bad
                       episode reports its own error without aborting the rest.
+                      get_joint_names() is a best-effort motor-name lookup used
+                      only for profile auto-detection -- never raises, returns
+                      None on any failure (the real load error surfaces from
+                      iter_episodes instead).
   engine.py          check_dataset() -- wires loader -> both check registries ->
                       two-pass accumulator -> combined findings. The ONE function
                       both cli.py and _guard.py call into -- neither duplicates
@@ -63,10 +71,14 @@ lerobot_lint/
   _guard.py          the guard context manager (module named _guard, not guard --
                       see "Naming gotcha #2" below for why).
   cli.py             the `lelint` command: check/profiles/version subcommands.
-                      check has --profile, --episodes, --no-video, --json,
-                      --verbose. 0/1/2 exit codes (matches trajlens's convention).
+                      check has --profile (now optional -- auto-detects from
+                      joint names when omitted, always discloses which profile
+                      was used and why), --episodes, --no-video, --json,
+                      --verbose, --fail-on info|warning|error (default: error).
+                      0/1/2 exit codes (matches trajlens's convention).
   profiles/          default.yaml (generic, gripper_index=null), so101.yaml,
-                      koch.yaml (both gripper_index=5, standard 6-DOF layout)
+                      koch.yaml (both gripper_index=5, standard 6-DOF layout,
+                      identical to each other -- see config.detect_profile_name)
   checks/
     base.py          Check + DatasetCheck ABCs, CheckRegistry + DatasetCheckRegistry,
                       both with per-check crash isolation (one broken check
@@ -92,24 +104,27 @@ lerobot_lint/
     finding_summary.py   shared Finding->text formatting; sanitize_text() strips
                          control characters at the source, used by both console
                          and json_report so neither has to remember to do it
-tests/               110 tests, all passing, mirrors lerobot_lint/ structure 1:1
+tests/               128 tests, all passing, mirrors lerobot_lint/ structure 1:1
 ```
 
-Run `.venv/bin/python -m pytest` — should show `110 passed`.
+Run `.venv/bin/python -m pytest` — should show `128 passed`.
 
 **Try it for real:**
 ```bash
 .venv/bin/lelint check lerobot/pusht --episodes 0:3 --no-video
 .venv/bin/lelint check lerobot/pusht --episodes 0:3 --no-video --json /tmp/report.json --verbose
+.venv/bin/lelint check lerobot/pusht --episodes 0:1 --no-video --fail-on warning
 .venv/bin/python -c "import lerobot_lint; lerobot_lint.guard('lerobot/pusht', episode_indices=[0], download_videos=False).__enter__()"
 ```
 
-**31 commits**, one logical unit each — `git log --oneline` to see the build
+**34 commits**, one logical unit each — `git log --oneline` to see the build
 order. Notable ones beyond the obvious: two loader fixes caught only by
 actually wiring the engine together (real episode index vs. enumerate
 position; a single bad episode no longer kills the whole generator); zero-
-episode datasets now correctly treated as an error (previously silent);
-and a real naming-collision bug in the package (see "Naming gotcha #2").
+episode datasets now correctly treated as an error (previously silent); a
+real naming-collision bug in the package (see "Naming gotcha #2"); and an
+unhandled `ValueError` on an unknown `--profile` value (raw traceback to a
+stranger) caught while wiring auto-profile-detection into the CLI.
 
 ## IMPORTANT finding from the first real run — read before trusting any output
 
@@ -142,17 +157,21 @@ re-validate against that instead. This is exactly what the field study
 3. **Real video decode** in `loader.py` — actually calling `av`/opencv to
    produce `CameraSample` objects (windowed sampling: 3 windows of 10 truly-
    consecutive frames per camera). See "Known environment issue" below.
-4. **`--fail-on error|warning` flag** — cli.py has `--profile`, `--episodes`,
-   `--no-video`, `--json`, `--verbose` now; `--fail-on` is the one remaining
-   piece from the source spec's CLI surface.
-5. **Auto-profile detection** (item 4 from the CEO plan) — detect robot type
-   from joint naming convention, suggest a profile, always print which
-   profile was used (auto-detected or not — must never be silent).
-6. **Packaging** — CI/CD, PyPI publish workflow with a post-publish smoke test,
+4. **Packaging** — CI/CD, PyPI publish workflow with a post-publish smoke test,
    `CONTRIBUTING.md` + `ARCHITECTURE.md`.
-7. **Field study** — run against 30-50 real public Hub datasets (**with real
+5. **Field study** — run against 30-50 real public Hub datasets (**with real
    arm datasets this time, not pusht** — see the finding above), calibrate
    every threshold, produce the launch post.
+
+Done since the last pass through this list: **`--fail-on info|warning|error`**
+(cli.py, default `error` — matches prior behavior exactly) and **auto-profile
+detection** (`config.detect_profile_name()` matches a dataset's joint names
+against a known convention; every run now prints which profile was used and
+why — explicit / auto-detected / no-match-fell-back-to-default — never
+silent). so101 and koch currently share one identical joint-naming
+convention, so auto-detect can't distinguish them from names alone; it picks
+deterministically (`koch`, sorted-name order) and this is a non-issue in
+practice since the two profiles' thresholds are also identical.
 
 ## Known environment issue (hit for real, not hypothetical)
 
@@ -199,7 +218,7 @@ don't rely on any import spelling to disambiguate after the fact.
 
 ```bash
 cd /Users/mannas/Desktop/Projects/lerobot-lint
-.venv/bin/python -m pytest                              # confirm 110 passed
+.venv/bin/python -m pytest                              # confirm 128 passed
 .venv/bin/lelint check lerobot/pusht --episodes 0:3 --no-video   # see it run
 git log --oneline                                        # see what's been built
 ```
