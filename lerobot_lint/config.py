@@ -18,6 +18,30 @@ class Profile:
     max_joint_velocity: float
 
 
+def list_profile_names() -> list[str]:
+    return sorted(
+        p.name.removesuffix(".yaml")
+        for p in resources.files(PROFILES_PACKAGE).iterdir()
+        if p.name.endswith(".yaml")
+    )
+
+
+def detect_profile_name(joint_names: list[str] | None) -> str | None:
+    """Match a dataset's joint names against a known hardware profile's naming
+    convention. Returns None (falls back to the 'default' profile) if nothing
+    matches. so101 and koch currently share an identical convention -- and
+    identical thresholds, so which one is reported doesn't change any check's
+    behavior -- the earlier one in sorted profile-name order wins."""
+    if not joint_names:
+        return None
+    for name in list_profile_names():
+        if name == "default":
+            continue
+        if load_profile(name).joint_names == joint_names:
+            return name
+    return None
+
+
 def load_profile(name: str) -> Profile:
     try:
         raw = resources.files(PROFILES_PACKAGE).joinpath(f"{name}.yaml").read_text()

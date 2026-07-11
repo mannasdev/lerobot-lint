@@ -49,6 +49,21 @@ def _load_one_episode(repo_id_or_path: str, episode_index: int, meta, download_v
     )
 
 
+def get_joint_names(repo_id_or_path: str) -> list[str] | None:
+    """Best-effort lookup of a dataset's observation.state joint/motor names,
+    for profile auto-detection. Advisory only -- any failure (bad repo id,
+    missing feature, unexpected metadata shape) returns None rather than
+    raising, since the real load error (if any) will surface properly from
+    iter_episodes instead."""
+    from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
+
+    try:
+        meta = LeRobotDatasetMetadata(repo_id_or_path)
+        return list(meta.features["observation.state"]["names"]["motors"])
+    except Exception:
+        return None
+
+
 def iter_episodes(
     repo_id_or_path: str,
     episode_indices: list[int] | None = None,

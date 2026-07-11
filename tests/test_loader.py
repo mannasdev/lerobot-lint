@@ -1,6 +1,6 @@
 import numpy as np
 
-from lerobot_lint.loader import iter_episodes
+from lerobot_lint.loader import get_joint_names, iter_episodes
 from lerobot_lint.types import EpisodeData
 
 # Small, public, non-video-dependent smoke test against a real dataset.
@@ -71,3 +71,16 @@ def test_iter_episodes_one_bad_episode_does_not_abort_the_rest():
     ep1, error1 = by_index[1]
     assert error1 is None
     assert isinstance(ep1, EpisodeData)
+
+
+def test_get_joint_names_returns_the_motor_names_for_a_real_dataset():
+    # pusht is a 2D-pixel-coordinate sim task, so its "motors" are generic
+    # placeholders -- this only proves the metadata plumbing works, not that
+    # pusht has real joint names (see PROGRESS.md's pusht finding).
+    joint_names = get_joint_names(REAL_REPO_ID)
+
+    assert joint_names == ["motor_0", "motor_1"]
+
+
+def test_get_joint_names_returns_none_for_a_bad_repo_id_instead_of_raising():
+    assert get_joint_names("not-a-real-repo/does-not-exist-xyz") is None
