@@ -26,6 +26,13 @@ def list_profile_names() -> list[str]:
     )
 
 
+def _strip_motor_suffix(joint_name: str) -> str:
+    # Real LeRobot v2.1 hardware datasets suffix each joint with its recorded
+    # modality, e.g. "shoulder_pan.pos" -- our profiles' convention is bare
+    # names, so this suffix must be stripped before comparing.
+    return joint_name.split(".")[0]
+
+
 def detect_profile_name(joint_names: list[str] | None) -> str | None:
     """Match a dataset's joint names against a known hardware profile's naming
     convention. Returns None (falls back to the 'default' profile) if nothing
@@ -34,10 +41,11 @@ def detect_profile_name(joint_names: list[str] | None) -> str | None:
     behavior -- the earlier one in sorted profile-name order wins."""
     if not joint_names:
         return None
+    normalized = [_strip_motor_suffix(n) for n in joint_names]
     for name in list_profile_names():
         if name == "default":
             continue
-        if load_profile(name).joint_names == joint_names:
+        if load_profile(name).joint_names == normalized:
             return name
     return None
 

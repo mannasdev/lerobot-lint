@@ -52,3 +52,19 @@ def test_detect_profile_name_returns_none_for_an_unrecognized_convention():
 def test_detect_profile_name_returns_none_for_no_joint_names():
     assert detect_profile_name(None) is None
     assert detect_profile_name([]) is None
+
+
+def test_detect_profile_name_matches_real_hardware_pos_suffixed_names():
+    # Real LeRobot v2.1 hardware datasets (unlike our bare-name profile
+    # convention) suffix each joint with ".pos" -- e.g. "shoulder_pan.pos".
+    # A dataset using the real convention must still be recognized.
+    joint_names = [
+        "shoulder_pan.pos",
+        "shoulder_lift.pos",
+        "elbow_flex.pos",
+        "wrist_flex.pos",
+        "wrist_roll.pos",
+        "gripper.pos",
+    ]
+
+    assert detect_profile_name(joint_names) == "koch"

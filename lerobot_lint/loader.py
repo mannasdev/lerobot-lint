@@ -59,7 +59,12 @@ def get_joint_names(repo_id_or_path: str) -> list[str] | None:
 
     try:
         meta = LeRobotDatasetMetadata(repo_id_or_path)
-        return list(meta.features["observation.state"]["names"]["motors"])
+        names = meta.features["observation.state"]["names"]
+        # Simulated/pixel-space datasets store this as {"motors": [...]};
+        # real hardware-recorded datasets store it as a flat list directly.
+        if isinstance(names, dict):
+            names = names["motors"]
+        return list(names)
     except Exception:
         return None
 

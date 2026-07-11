@@ -84,3 +84,20 @@ def test_get_joint_names_returns_the_motor_names_for_a_real_dataset():
 
 def test_get_joint_names_returns_none_for_a_bad_repo_id_instead_of_raising():
     assert get_joint_names("not-a-real-repo/does-not-exist-xyz") is None
+
+
+def test_get_joint_names_handles_a_flat_list_names_shape():
+    # Real hardware-recorded SO-101 datasets (unlike pusht's sim/motors-dict
+    # shape) store observation.state's "names" as a flat list, not
+    # {"motors": [...]}. Missing this shape silently returned None, which
+    # would have made profile auto-detection silently fail on real arm data.
+    joint_names = get_joint_names("lerobot/svla_so101_pickplace")
+
+    assert joint_names == [
+        "shoulder_pan.pos",
+        "shoulder_lift.pos",
+        "elbow_flex.pos",
+        "wrist_flex.pos",
+        "wrist_roll.pos",
+        "gripper.pos",
+    ]
