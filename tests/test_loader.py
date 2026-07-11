@@ -76,7 +76,7 @@ def test_iter_episodes_one_bad_episode_does_not_abort_the_rest():
 def test_get_joint_names_returns_the_motor_names_for_a_real_dataset():
     # pusht is a 2D-pixel-coordinate sim task, so its "motors" are generic
     # placeholders -- this only proves the metadata plumbing works, not that
-    # pusht has real joint names (see PROGRESS.md's pusht finding).
+    # pusht has real joint names.
     joint_names = get_joint_names(REAL_REPO_ID)
 
     assert joint_names == ["motor_0", "motor_1"]

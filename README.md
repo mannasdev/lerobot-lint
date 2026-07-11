@@ -17,8 +17,6 @@ Deterministic, rule-based checks. No ML, no training, no GPU required to run it.
 end-to-end against real Hugging Face Hub datasets: loading, checking, console/JSON
 reports, exit codes, a `guard()` context-manager API for use inside training scripts.
 
-See [`PROGRESS.md`](./PROGRESS.md) for exactly what's built, what's left, and why.
-
 **Known limitation:** camera/video checks (frozen camera, degenerate image, video
 length mismatch) are implemented and unit-tested against synthetic frame data, but
 real video decoding isn't wired up yet, so they don't see real camera frames from an
@@ -87,8 +85,7 @@ over a quarter of that episode's frames.
 ## What's not built yet
 
 The A-F scorecard formula, the bug-card renderer, real video-decode wiring, CI, and
-the full field study (calibrating thresholds against 30-50 real datasets). Full list
-with context in [`PROGRESS.md`](./PROGRESS.md).
+the full field study (calibrating thresholds against 30-50 real datasets).
 
 ## License
 
