@@ -16,20 +16,17 @@ One competitor exists (**trajlens**, github.com/Kunal-Somani/trajlens) that
 checks dataset *format/schema* — this tool checks robot *behavior*, which
 trajlens doesn't touch. Both layers matter; they're not redundant.
 
-## Where the deeper context lives (read these if you need "why", not just "what")
+## Where the deeper design context lives
 
-- **Design doc** (full architecture, every decision + rationale, 3 rounds of
-  adversarial review + 2 outside-voice passes):
-  `~/.gstack/projects/Projects/mannas-unknown-design-20260710-143402.md`
-- **CEO plan** (scope decisions — what got added/deferred and why, e.g. why
-  the GitHub bot and live badge are v1.1 not v1):
-  `~/.gstack/projects/Projects/ceo-plans/2026-07-10-lerobot-lint.md`
-- **TODOS** (deferred items with context — profile versioning, paid-status-quo
-  research, lerobot compat CI, CLI smoke tests, the bot, the badge, compare-mode):
-  `~/.gstack/projects/Projects/lerobot-lint-TODOS.md`
-
-These aren't duplicated here on purpose — this file is "what's built and
-what's next," those are "why it's designed this way."
+The full architecture write-up and scope-decision rationale (why the GitHub
+bot, live badge, and compare-mode are deferred rather than in v1; why the
+full 20-check scope shipped despite trajlens's overlap on a few checks) were
+produced in planning sessions before this repo existed and aren't checked in
+here — this file is deliberately the only "what's built and what's next"
+source of truth for anyone picking this project up. Deferred items and their
+context (profile schema versioning, lerobot-version compat CI, the auto-lint
+bot, the live badge, compare-mode) are summarized inline in this file rather
+than requiring an external doc.
 
 ## Workflow rules for this project (already agreed, don't re-ask)
 
@@ -104,10 +101,10 @@ lerobot_lint/
     finding_summary.py   shared Finding->text formatting; sanitize_text() strips
                          control characters at the source, used by both console
                          and json_report so neither has to remember to do it
-tests/               128 tests, all passing, mirrors lerobot_lint/ structure 1:1
+tests/               130 tests, all passing, mirrors lerobot_lint/ structure 1:1
 ```
 
-Run `.venv/bin/python -m pytest` — should show `128 passed`.
+Run `.venv/bin/python -m pytest` — should show `130 passed`.
 
 **Try it for real:**
 ```bash
@@ -117,14 +114,16 @@ Run `.venv/bin/python -m pytest` — should show `128 passed`.
 .venv/bin/python -c "import lerobot_lint; lerobot_lint.guard('lerobot/pusht', episode_indices=[0], download_videos=False).__enter__()"
 ```
 
-**34 commits**, one logical unit each — `git log --oneline` to see the build
-order. Notable ones beyond the obvious: two loader fixes caught only by
-actually wiring the engine together (real episode index vs. enumerate
-position; a single bad episode no longer kills the whole generator); zero-
-episode datasets now correctly treated as an error (previously silent); a
-real naming-collision bug in the package (see "Naming gotcha #2"); and an
-unhandled `ValueError` on an unknown `--profile` value (raw traceback to a
-stranger) caught while wiring auto-profile-detection into the CLI.
+**~38 commits** (see `git log --oneline` for the exact count and build order),
+one logical unit each. Notable ones beyond the obvious: two loader fixes
+caught only by actually wiring the engine together (real episode index vs.
+enumerate position; a single bad episode no longer kills the whole
+generator); zero-episode datasets now correctly treated as an error
+(previously silent); a real naming-collision bug in the package (see
+"Naming gotcha #2"); an unhandled `ValueError` on an unknown `--profile`
+value (raw traceback to a stranger) caught while wiring auto-profile-
+detection into the CLI; and profile auto-detection not actually working on
+any real hardware dataset until "Naming gotcha #3" below was found and fixed.
 
 ## IMPORTANT finding from the first real run — read before trusting any output
 
@@ -144,6 +143,40 @@ SATURATED_JOINT, DEAD_JOINT, GRIPPER_INERT all assume joint-radian state).
 real SO-101/Koch/6-DOF-arm dataset** (actual joint-radian state/action) and
 re-validate against that instead. This is exactly what the field study
 (days 11-12 in the source spec) is for — this is that finding arriving early.
+
+## Second real-data finding — a real bug, on a real arm dataset
+
+Ran against `lerobot/svla_so101_pickplace` (real SO-101 hardware, official
+`lerobot` org, 50-episode pick-place task) once profile auto-detection was
+fixed to actually work on real datasets (see "Naming gotcha #3" below).
+Same JITTER/SATURATED_JOINT caveat as pusht applies here too — this
+dataset's `observation.state`/`action` are 0-100 normalized position values,
+not radians, so those two checks are equally noisy on it. **But
+`FROZEN_STATE` is unit-independent** (it only checks for bit-identical
+consecutive frames) **and it found something real**: 5 of 50 episodes have
+stretches of 16-67 consecutive frames (0.5-2.2s at 30fps) where the robot's
+full state vector doesn't change at all while the episode is actively
+recording. Verified by hand against the raw parquet data for two of these
+(episode 0 near the start, episode 4 mid-task — ruling out "recording
+startup lag" as the sole explanation). Not disclosed anywhere in the
+dataset's README. This is in the repo's own README as a live example.
+
+## Naming gotcha #3 (a real bug, now fixed — profile auto-detection on real hardware)
+
+`get_joint_names()` and `detect_profile_name()` were both built and tested
+against `pusht`'s schema, which turned out to be a poor proxy for real
+hardware datasets in two ways: (1) `pusht` stores `observation.state`'s
+`"names"` as `{"motors": [...]}`, but real hardware-recorded datasets store
+it as a flat list directly — the dict-only lookup silently returned `None`
+on every real dataset. (2) real hardware datasets suffix each joint with its
+recorded modality (`"shoulder_pan.pos"`, not `"shoulder_pan"`), which never
+matched our bare-name profile convention. Together, profile auto-detection
+as originally shipped could not have matched a single real SO-101/Koch
+dataset — only synthetic joint-name lists built to match our own
+convention exactly. Both fixed; see commit history for the exact diffs.
+Lesson repeated from gotchas #1 and #2: verify against a real dataset before
+trusting anything that touches dataset-derived shapes/strings, even when the
+unit tests are green.
 
 ## What's NOT built yet — in the order it should happen
 
@@ -217,8 +250,8 @@ don't rely on any import spelling to disambiguate after the fact.
 ## Quick start for a new session
 
 ```bash
-cd /Users/mannas/Desktop/Projects/lerobot-lint
-.venv/bin/python -m pytest                              # confirm 128 passed
+cd lerobot-lint    # this repo, wherever you cloned it
+.venv/bin/python -m pytest                              # confirm 130 passed
 .venv/bin/lelint check lerobot/pusht --episodes 0:3 --no-video   # see it run
 git log --oneline                                        # see what's been built
 ```
