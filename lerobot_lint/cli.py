@@ -24,6 +24,13 @@ class FailOnLevel(str, enum.Enum):
     error = "error"
 
 
+class UnitsChoice(str, enum.Enum):
+    auto = "auto"
+    radians = "radians"
+    degrees = "degrees"
+    normalized = "normalized"
+
+
 def _debug_context(repo_id_or_path: str) -> str:
     from importlib.metadata import version as pkg_version
 
@@ -82,6 +89,11 @@ def check(
     ),
     episodes: str | None = typer.Option(None, "--episodes", help="Episode range, e.g. 0:50"),
     no_video: bool = typer.Option(False, "--no-video", help="Skip camera/video checks entirely"),
+    units: UnitsChoice = typer.Option(
+        UnitsChoice.auto,
+        "--units",
+        help="Joint-state units: radians, degrees, or normalized (default: infer from the data)",
+    ),
     json_out: str | None = typer.Option(None, "--json", help="Also write a JSON report to this path"),
     verbose: bool = typer.Option(False, "--verbose", help="Print debug context on error/crash"),
     fail_on: FailOnLevel = typer.Option(
@@ -102,6 +114,7 @@ def check(
             loaded_profile,
             episode_indices=episode_indices,
             download_videos=not no_video,
+            units=units.value,
         )
     except ValueError as e:
         typer.echo(f"{e}", err=True)

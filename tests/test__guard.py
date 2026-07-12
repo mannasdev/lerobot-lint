@@ -79,3 +79,20 @@ def test_guard_treats_zero_episodes_as_a_failed_check_not_a_pass_through():
     with pytest.raises(LelintCheckFailedError):
         with guard(REAL_REPO_ID, profile_name="default", episode_indices=[]):
             pass
+
+
+def test_guard_passes_units_through_to_check_dataset(monkeypatch):
+    import lerobot_lint._guard as guard_module
+
+    captured = {}
+
+    def fake_check_dataset(*args, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(guard_module, "check_dataset", fake_check_dataset)
+
+    with guard(REAL_REPO_ID, profile_name="default", episode_indices=[0], units="degrees"):
+        pass
+
+    assert captured["units"] == "degrees"

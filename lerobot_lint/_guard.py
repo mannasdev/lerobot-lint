@@ -41,11 +41,13 @@ class guard:
         profile_name: str = "default",
         episode_indices: list[int] | None = None,
         download_videos: bool = False,
+        units: str = "auto",
     ) -> None:
         self.repo_id_or_path = repo_id_or_path
         self.profile_name = profile_name
         self.episode_indices = episode_indices
         self.download_videos = download_videos
+        self.units = units
 
     def __enter__(self) -> "guard":
         profile = load_profile(self.profile_name)
@@ -54,6 +56,7 @@ class guard:
             profile,
             episode_indices=self.episode_indices,
             download_videos=self.download_videos,
+            units=self.units,
         )
 
         if _has_crashed_finding(findings):
