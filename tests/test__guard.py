@@ -5,9 +5,20 @@ from lerobot_lint._guard import LelintCheckCrashedError, LelintCheckFailedError,
 REAL_REPO_ID = "lerobot/pusht"
 
 
-def test_guard_raises_check_failed_on_a_real_error_finding():
-    # 2 episodes of pusht produces real JITTER errors (severity=error) --
-    # guard() must raise since this dataset has real error-severity findings.
+def test_guard_raises_check_failed_on_a_real_error_finding(monkeypatch):
+    # This used to lean on pusht producing JITTER errors -- which turned out to
+    # be units false positives (pixel coordinates read as rad/s). With units
+    # inference those are correctly gone, so the error finding is stubbed here.
+    import lerobot_lint._guard as guard_module
+    from lerobot_lint.types import Finding
+
+    def fake_check_dataset(*args, **kwargs):
+        return [
+            Finding(check="DEAD_JOINT", severity="error", episode=0, joint="2", frames=[], message="m", data={})
+        ]
+
+    monkeypatch.setattr(guard_module, "check_dataset", fake_check_dataset)
+
     with pytest.raises(LelintCheckFailedError):
         with guard(REAL_REPO_ID, profile_name="default", episode_indices=[0], download_videos=False):
             pass
