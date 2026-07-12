@@ -49,3 +49,25 @@ def test_render_includes_a_summary_count_by_severity():
     assert "error" in report.lower()
     assert "warning" in report.lower()
     assert "info" in report.lower()
+
+
+def test_render_includes_the_profile_disclosure_in_the_report_body():
+    # the pre-run echo of this line gets buried under download progress bars;
+    # the report itself is where a user actually reads it
+    report = render_console_report(
+        [_finding()],
+        repo_id_or_path="lerobot/pusht",
+        profile_disclosure="Using profile: default (no match, override with --profile)",
+    )
+
+    assert "Using profile: default (no match, override with --profile)" in report
+
+
+def test_render_includes_the_profile_disclosure_even_on_a_clean_report():
+    report = render_console_report(
+        [],
+        repo_id_or_path="lerobot/pusht",
+        profile_disclosure="Using profile: koch (auto-detected from joint names, override with --profile)",
+    )
+
+    assert "Using profile: koch" in report

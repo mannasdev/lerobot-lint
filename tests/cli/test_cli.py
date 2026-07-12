@@ -164,3 +164,15 @@ def test_check_rejects_an_invalid_units_value_cleanly(monkeypatch):
 
     assert result.exit_code != 0
     assert "Traceback" not in result.output
+
+
+def test_check_repeats_the_profile_disclosure_inside_the_console_report(monkeypatch):
+    from lerobot_lint import cli as cli_module
+
+    monkeypatch.setattr(cli_module, "check_dataset", lambda *a, **k: [])
+    monkeypatch.setattr(cli_module, "get_joint_names", lambda repo_id: ["motor_0", "motor_1"])
+
+    result = runner.invoke(app, ["check", "lerobot/pusht"])
+
+    # once as the pre-run echo, and at least once more inside the report body
+    assert result.output.count("Using profile: default") >= 2

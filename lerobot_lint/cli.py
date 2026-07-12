@@ -137,7 +137,7 @@ def check(
             typer.echo(traceback.format_exc(), err=True)
         raise typer.Exit(code=2) from e
 
-    report = render_console_report(findings, repo_id_or_path)
+    report = render_console_report(findings, repo_id_or_path, profile_disclosure=disclosure)
     typer.echo(report)
 
     if json_out is not None:
