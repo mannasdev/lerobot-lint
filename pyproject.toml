@@ -1,6 +1,6 @@
 [project]
 name = "lerobot-lint"
-version = "0.1.0"
+version = "0.1.1"
 description = "Deterministic, rule-based checks that catch behavioral/kinematic data bugs in LeRobot robot-training datasets before you burn GPU-hours training on bad data."
 readme = "README.md"
 license = "Apache-2.0"
