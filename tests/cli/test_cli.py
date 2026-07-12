@@ -115,3 +115,64 @@ def test_check_rejects_an_unknown_explicit_profile_cleanly():
     assert result.exit_code == 2
     assert "Traceback" not in result.output
     assert "unknown profile" in result.output
+
+
+def test_check_passes_units_flag_through_to_the_engine(monkeypatch):
+    from lerobot_lint import cli as cli_module
+
+    captured = {}
+
+    def fake_check_dataset(*args, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(cli_module, "check_dataset", fake_check_dataset)
+    monkeypatch.setattr(cli_module, "get_joint_names", lambda repo_id: None)
+
+    result = runner.invoke(app, ["check", "lerobot/pusht", "--units", "degrees"])
+
+    assert result.exit_code == 0
+    assert captured["units"] == "degrees"
+
+
+def test_check_defaults_units_to_auto(monkeypatch):
+    from lerobot_lint import cli as cli_module
+
+    captured = {}
+
+    def fake_check_dataset(*args, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(cli_module, "check_dataset", fake_check_dataset)
+    monkeypatch.setattr(cli_module, "get_joint_names", lambda repo_id: None)
+
+    result = runner.invoke(app, ["check", "lerobot/pusht"])
+
+    assert result.exit_code == 0
+    assert captured["units"] == "auto"
+
+
+def test_check_rejects_an_invalid_units_value_cleanly(monkeypatch):
+    from lerobot_lint import cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module, "check_dataset", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run"))
+    )
+
+    result = runner.invoke(app, ["check", "lerobot/pusht", "--units", "parsecs"])
+
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
+
+
+def test_check_repeats_the_profile_disclosure_inside_the_console_report(monkeypatch):
+    from lerobot_lint import cli as cli_module
+
+    monkeypatch.setattr(cli_module, "check_dataset", lambda *a, **k: [])
+    monkeypatch.setattr(cli_module, "get_joint_names", lambda repo_id: ["motor_0", "motor_1"])
+
+    result = runner.invoke(app, ["check", "lerobot/pusht"])
+
+    # once as the pre-run echo, and at least once more inside the report body
+    assert result.output.count("Using profile: default") >= 2

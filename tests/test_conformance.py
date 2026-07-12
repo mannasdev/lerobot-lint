@@ -10,15 +10,21 @@ REAL_REPO_ID = "lerobot/pusht"
 
 
 def test_a_dataset_that_exits_2_from_the_cli_also_raises_under_guard():
-    # pusht episode 0 produces real JITTER errors -- CLI should exit 2.
+    # pusht's states are pixel coordinates; forcing --units radians makes its
+    # motion legitimately exceed the rad/s jitter limit, giving a deterministic
+    # error finding from a real dataset. (Under the default units=auto, pixel
+    # scale is correctly classified unknown and JITTER is skipped -- the old
+    # version of this test was relying on that false-positive storm.)
     result = runner.invoke(
-        app, ["check", REAL_REPO_ID, "--episodes", "0:1", "--no-video"]
+        app, ["check", REAL_REPO_ID, "--episodes", "0:1", "--no-video", "--units", "radians"]
     )
     assert result.exit_code == 2
 
     # guard() on the exact same fixture must raise for the same reason.
     with pytest.raises(lerobot_lint.LelintCheckFailedError):
-        with lerobot_lint.guard(REAL_REPO_ID, episode_indices=[0], download_videos=False):
+        with lerobot_lint.guard(
+            REAL_REPO_ID, episode_indices=[0], download_videos=False, units="radians"
+        ):
             pass
 
 

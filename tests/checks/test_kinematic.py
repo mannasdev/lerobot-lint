@@ -126,6 +126,31 @@ def test_jitter_does_not_fire_on_smooth_motion():
     assert findings == []
 
 
+def test_jitter_honors_a_custom_max_joint_velocity():
+    n_frames, n_joints, fps = 100, 2, 30.0
+    states = np.tile(np.linspace(0, 1, n_frames), (n_joints, 1)).T.copy()
+    states[50, 0] += 5.0  # 150 rad/s spike: above the 8.0 default, below 200
+
+    ep = _episode_with_states(states, fps=fps)
+
+    # a permissive threshold must silence the finding the default produces --
+    # this is what wires profiles' max_joint_velocity into actual behavior
+    assert JitterCheck().run(ep, episode_index=0) != []
+    assert JitterCheck(max_joint_velocity=200.0).run(ep, episode_index=0) == []
+
+
+def test_jitter_reports_the_configured_threshold_in_its_message():
+    n_frames, n_joints, fps = 100, 2, 30.0
+    states = np.tile(np.linspace(0, 1, n_frames), (n_joints, 1)).T.copy()
+    states[50, 0] += 5.0
+
+    ep = _episode_with_states(states, fps=fps)
+    findings = JitterCheck(max_joint_velocity=100.0).run(ep, episode_index=0)
+
+    assert len(findings) == 1
+    assert "100.0 rad/s" in findings[0].message
+
+
 def test_jitter_escalates_to_error_above_2_percent_of_frames():
     n_frames, n_joints, fps = 100, 2, 30.0
     states = np.tile(np.linspace(0, 1, n_frames), (n_joints, 1)).T.copy()

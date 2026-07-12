@@ -12,7 +12,20 @@ def test_lerobot_lint_exposes_the_guard_exceptions():
     assert issubclass(lerobot_lint.LelintCheckCrashedError, Exception)
 
 
-def test_lerobot_lint_guard_raises_via_top_level_import():
+def test_lerobot_lint_guard_raises_via_top_level_import(monkeypatch):
+    # stubbed error finding: pusht no longer produces real errors now that the
+    # units false positives (pixel coords read as rad/s) are fixed. This test
+    # only cares that the top-level import path raises the top-level exception.
+    import lerobot_lint._guard as guard_module
+    from lerobot_lint.types import Finding
+
+    def fake_check_dataset(*args, **kwargs):
+        return [
+            Finding(check="DEAD_JOINT", severity="error", episode=0, joint="2", frames=[], message="m", data={})
+        ]
+
+    monkeypatch.setattr(guard_module, "check_dataset", fake_check_dataset)
+
     with pytest.raises(lerobot_lint.LelintCheckFailedError):
         with lerobot_lint.guard("lerobot/pusht", episode_indices=[0], download_videos=False):
             pass

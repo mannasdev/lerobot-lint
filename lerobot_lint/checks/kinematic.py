@@ -107,6 +107,10 @@ class JitterCheck(Check):
     MAX_JOINT_VELOCITY = 8.0  # rad/s, source-spec SO-101-class default
     ERROR_FRACTION_THRESHOLD = 0.02
 
+    def __init__(self, max_joint_velocity: float = MAX_JOINT_VELOCITY):
+        # profiles carry per-robot velocity limits; the engine passes them in
+        self.max_joint_velocity = max_joint_velocity
+
     def run(self, episode: EpisodeData, episode_index: int) -> list[Finding]:
         n_frames, n_joints = episode.states.shape
         findings = []
@@ -114,7 +118,7 @@ class JitterCheck(Check):
         for joint_index in range(n_joints):
             values = episode.states[:, joint_index]
             velocity = np.abs(np.diff(values)) * episode.fps
-            spike_mask = velocity > self.MAX_JOINT_VELOCITY
+            spike_mask = velocity > self.max_joint_velocity
 
             if not np.any(spike_mask):
                 continue
@@ -136,7 +140,7 @@ class JitterCheck(Check):
                     frames=spike_frames,
                     message=(
                         f"Joint {joint_index} has {len(spike_frames)} frame(s) with velocity "
-                        f"exceeding {self.MAX_JOINT_VELOCITY} rad/s (worst: "
+                        f"exceeding {self.max_joint_velocity} rad/s (worst: "
                         f"{float(velocity[worst_idx]):.1f} rad/s at frame {worst_idx})"
                     ),
                     data={

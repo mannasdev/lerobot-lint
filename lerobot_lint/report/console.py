@@ -13,9 +13,15 @@ SEVERITY_ORDER = ["error", "warning", "info"]
 SEVERITY_LABELS = {"error": "Errors", "warning": "Warnings", "info": "Info"}
 
 
-def render_console_report(findings: list[Finding], repo_id_or_path: str) -> str:
+def render_console_report(
+    findings: list[Finding], repo_id_or_path: str, profile_disclosure: str | None = None
+) -> str:
     console = Console(record=True, width=100)
     console.print(f"[bold]lerobot-lint[/bold] — {repo_id_or_path}")
+    if profile_disclosure is not None:
+        # also echoed before the run, but that line gets buried under dataset
+        # download progress bars -- the report is where it must survive
+        console.print(profile_disclosure, markup=False)
     console.print()
 
     if not findings:

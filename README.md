@@ -37,9 +37,17 @@ lelint check lerobot/some-dataset --no-video
 
 Auto-detects a robot profile (so101/koch joint-naming convention) from the dataset's
 own metadata when `--profile` isn't passed, and always tells you which profile it
-used and why, never silently. `--fail-on info|warning|error` controls what makes the
-exit code nonzero (default: `error`, exit 0/1/2). `--json report.json` writes a
-machine-readable report alongside the console one.
+used and why, never silently — the disclosure appears in the report itself, not just
+before the run. `--fail-on info|warning|error` controls what makes the exit code
+nonzero (default: `error`, exit 0/1/2). `--json report.json` writes a machine-readable
+report alongside the console one.
+
+LeRobot datasets don't declare their joint-state units, and the Hub mixes radians,
+degrees, and normalized values. `lelint` infers the units from the observed state
+extent (disclosed as a `UNITS_INFERRED` finding), converts degrees to radians before
+running kinematic checks, and skips velocity-threshold checks — with one loud
+finding instead of a false-positive storm — when the scale looks like raw encoder
+counts. Override the inference with `--units radians|degrees|normalized`.
 
 ```python
 import lerobot_lint
